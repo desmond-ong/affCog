@@ -615,17 +615,6 @@ Parameters for this sequence.
   winChoiceArray: new Array(numTrials),
   winArray: new Array(numTrials),
   winProbArray: new Array(numTrials),
-  
-
-  emo1Array: new Array(numTrials),
-  emo2Array: new Array(numTrials),
-  emo3Array: new Array(numTrials),
-  emo4Array: new Array(numTrials),
-  emo5Array: new Array(numTrials),
-  emo6Array: new Array(numTrials),
-  emo7Array: new Array(numTrials),
-  emo8Array: new Array(numTrials),
-  
 
   // My Results:
   outcome1Array: new Array(numTrials),
@@ -1060,15 +1049,6 @@ The function that gets called when the sequence is finished.
         indicatorPath8 = slider8.path("M" + sliderStartLeft + " " + sliderMiddle + "H" + (emo8 * myscale + sliderStartLeft)).attr({"stroke-width": 3}).insertBefore(indicator8);
 
 
-            experiment.emo1Array[numComplete-1] = Math.round(emo1*1000)/1000;
-            experiment.emo2Array[numComplete-1] = Math.round(emo2*1000)/1000; 
-            experiment.emo3Array[numComplete-1] = Math.round(emo3*1000)/1000; 
-            experiment.emo4Array[numComplete-1] = Math.round(emo4*1000)/1000; 
-            experiment.emo5Array[numComplete-1] = Math.round(emo5*1000)/1000; 
-            experiment.emo6Array[numComplete-1] = Math.round(emo6*1000)/1000; 
-            experiment.emo7Array[numComplete-1] = Math.round(emo7*1000)/1000; 
-            experiment.emo8Array[numComplete-1] = Math.round(emo8*1000)/1000; 
-          
 /*
 
         goButton.click(startSpinning());
