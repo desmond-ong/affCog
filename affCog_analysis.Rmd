@@ -1,0 +1,1244 @@
+---
+title: "Analysis Script accompaning Affective Cognition paper"
+author: "Desmond Ong"
+date: "Updated: June 10, 2015"
+output: html_document
+---
+
+```{r preamble, echo=FALSE, message=FALSE}
+library(lme4)
+library(ggplot2)
+library(ggbiplot)
+library(grid)
+library(lmerTest)
+source("http://web.stanford.edu/~dco/common/summarySE.R")
+source("http://web.stanford.edu/~dco/common/useful.R")
+source("data/Myggbiplot.R")
+
+
+# color palette for graphs
+cbPal <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+#cbbwPal <- c("#d8b365","#5ab4ac")
+
+```
+
+# Experiment 1
+
+### Model Selection
+
+```{r expt-1-model-selection, echo=FALSE}
+expt1_data = read.csv("data/expt1data.csv")
+
+#### ---- Explanation of variables ---- ####
+#
+# workerid: anonymized participant ID
+# spinnerID: number in [1,50] that indicates the ID number of the particular scenario
+#     if spinnerID in 1, 4, 7... then agent wins payoff1
+#     if spinnerID in 2, 5, 8... then agent wins payoff2 
+#     if spinnerID in 3, 6, 9... then agent wins payoff3
+#
+# payoff_j (for j in 1,2,3):   payoff amount on the j-th sector of the wheel. Convention: payoff1 < payoff2 < payoff3
+# prob_j (for j in 1,2,3):  probability (i.e., sector size)
+# win:    amount that the wheel landed on. win will correspond to one of the payoffs.
+# winProb:  the probability of the sector the wheel landed on. i.e. if win == payoff_X, then winProb == prob_X
+#
+# angleProp: real number in [0,1]. "angle proportion" 
+#   - indicates where in the wheel the final outcome landed. angleProp = 0.5 means the pointer landed in the CENTER of the sector. angleProp < 0.5 means it was closer to the previous outcome, and angleProp > 0.5 means it was closer to the next outcome.
+#   for example, if win == payoff2, i.e. the agent's wheel landed in the middle outcome, then angleProp = 0.25 means that the pointer is pointing to halfway between (the boundary between payoff1 and payoff2) and (middle of sector containing payoff2). If angleProp ~ 1, then the pointer is almost on the boundary between payoff2 and payoff3 (i.e., nearly missing a higher amount)
+#
+# Dependent variables:
+# happy, sad, anger, surprise, disgust, fear, content, disapp[ointment]
+#   - integers in [1,9].
+#   - the response of the participants on the 9 point Likert scales
+
+
+#### ---- Analysis on Experiment 1 ---- ####
+
+# Calculate variables of interest:
+
+# expected value = sum_j (payoff_j * probability_j)
+# PE = win - EV
+# absPE = |PE|
+# Regret = win - max_j (payoff_j) = win - payoff3   ** payoff 3 is always the largest
+# Relief = win - min_j (payoff_j) = win - payoff1   ** payoff 1 is always the smallest
+# lwinProb ("Log Win Probability") = log(winning_probability)
+
+expt1_data$EV = expt1_data$payoff1 * expt1_data$prob1 + expt1_data$payoff2 * expt1_data$prob2 + expt1_data$payoff3 * expt1_data$prob3
+expt1_data$PE = expt1_data$win - expt1_data$EV
+expt1_data$absPE = abs(expt1_data$PE)
+
+expt1_data$Regret = expt1_data$win - expt1_data$payoff3
+expt1_data$Relief = expt1_data$win - expt1_data$payoff1
+expt1_data$lwinProb = log(expt1_data$winProb)
+
+# For the Near-Miss variable, we had to calculate a few intermediate variables.
+# nearHigher: a variable to indicate whether the final outcome position was closer to an alternative amount that was larger (nearHigher = 1) or if it was closer to an alternative outcome that was lower.
+#     - this occurred if if agent won lowest amount (spinnerID %% 3 == 1)
+#     - or if "angleProp" > 0.5 and agent won middle amount (spinnerID %% 3 == 2).
+#
+# nearerOutcome: the payoff of the nearer outcome
+# diffWin: the difference in amounts. i.e. the actual amount won - payoff of the nearer outcome
+#
+# distance: the 'distance' to the edge. distance is a real number in [0, 0.5], and is in units of "sector size" (one can think of it like a "standardized distance")
+# closeness_reciprocal: reciprocal transform of the distance
+#
+# affectiveCloseness: reciprocal distance * delta(win)
+
+expt1_data$nearHigher = 1*((expt1_data$spinnerID %% 3==1) | (
+  (expt1_data$spinnerID %% 3==2 & expt1_data$angleProp > .5))) 
+
+expt1_data$nearerOutcome = ((expt1_data$spinnerID %% 3==1 & expt1_data$angleProp <= .5) |
+                                (expt1_data$spinnerID %% 3==2 & expt1_data$angleProp > .5)) * 
+  expt1_data$payoff3 + ((expt1_data$spinnerID %% 3==2 & expt1_data$angleProp <= .5) |
+                                (expt1_data$spinnerID %% 3==0 & expt1_data$angleProp > .5)) * 
+  expt1_data$payoff1 + ((expt1_data$spinnerID %% 3==0 & expt1_data$angleProp <= .5) |
+                                (expt1_data$spinnerID %% 3==1 & expt1_data$angleProp > .5)) * 
+  expt1_data$payoff2
+
+expt1_data$diffWin = expt1_data$win - expt1_data$nearerOutcome
+
+expt1_data$distance = 0.5-abs(expt1_data$angleProp-0.5)
+expt1_data$closeness_reciprocal = 1/(expt1_data$distance)
+
+expt1_data$affectiveCloseness = expt1_data$closeness_reciprocal * expt1_data$diffWin
+
+### --- Model selection --- ###
+# Analysis reported in Appendix A
+
+reg.Eqn1Full <- lmer(happy    ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); summary(reg.Eqn1Full)
+reg.Eqn2Full <- lmer(sad      ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); summary(reg.Eqn2Full)
+reg.Eqn3Full <- lmer(anger    ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); summary(reg.Eqn3Full)
+reg.Eqn4Full <- lmer(surprise ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); summary(reg.Eqn4Full)
+reg.Eqn5Full <- lmer(disgust  ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); summary(reg.Eqn5Full)
+reg.Eqn6Full <- lmer(fear     ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); summary(reg.Eqn6Full)
+reg.Eqn7Full <- lmer(content  ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); summary(reg.Eqn7Full)
+reg.Eqn8Full <- lmer(disapp   ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); summary(reg.Eqn8Full)
+
+# stepwise using the step function
+
+step1 <- step(reg.Eqn1Full); step1
+step2 <- step(reg.Eqn2Full); step2
+step3 <- step(reg.Eqn3Full); step3
+step4 <- step(reg.Eqn4Full); step4
+step5 <- step(reg.Eqn5Full); step5
+step6 <- step(reg.Eqn6Full); step6
+step7 <- step(reg.Eqn7Full); step7
+step8 <- step(reg.Eqn8Full); step8
+
+# Printing the regression coefficients
+reg.Eqn1 <- lmer(happy    ~ win + PE + absPE + (1|workerid), expt1_data); summary(reg.Eqn1)
+reg.Eqn2 <- lmer(sad      ~ win + PE + absPE + (1|workerid), expt1_data); summary(reg.Eqn2)
+reg.Eqn3 <- lmer(anger    ~ win + PE + absPE + (1|workerid), expt1_data); summary(reg.Eqn3)
+reg.Eqn4 <- lmer(surprise ~ win + PE + absPE + (1|workerid), expt1_data); summary(reg.Eqn4)
+reg.Eqn5 <- lmer(disgust  ~ win + PE + absPE + (1|workerid), expt1_data); summary(reg.Eqn5)
+reg.Eqn6 <- lmer(fear     ~ win + PE + absPE + (1|workerid), expt1_data); summary(reg.Eqn6)
+reg.Eqn7 <- lmer(content  ~ win + PE + absPE + (1|workerid), expt1_data); summary(reg.Eqn7)
+reg.Eqn8 <- lmer(disapp   ~ win + PE + absPE + (1|workerid), expt1_data); summary(reg.Eqn8)
+
+```
+
+### PCA Calculation
+
+``` {r expt1-PCA, echo=FALSE, eval=TRUE}
+#### ---- PCA Calculation ---- ####
+
+PCACalculation <- princomp(~ happy + sad + anger + surprise + disgust + 
+                  fear + content + disapp, 
+                expt1_data[,12:19])
+print(summary(PCACalculation))
+print(PCACalculation[2])
+
+expt1_data$pcomp1 = PCACalculation$loadings[1,1]*(expt1_data$happy-mean(expt1_data$happy)) + 
+  PCACalculation$loadings[2,1]*(expt1_data$sad-mean(expt1_data$sad)) + 
+  PCACalculation$loadings[3,1]*(expt1_data$anger-mean(expt1_data$anger)) + 
+  PCACalculation$loadings[4,1]*(expt1_data$surprise-mean(expt1_data$surprise)) + 
+  PCACalculation$loadings[5,1]*(expt1_data$disgust-mean(expt1_data$disgust)) + 
+  PCACalculation$loadings[6,1]*(expt1_data$fear-mean(expt1_data$fear)) +
+  PCACalculation$loadings[7,1]*(expt1_data$content-mean(expt1_data$content)) + 
+  PCACalculation$loadings[8,1]*(expt1_data$disapp-mean(expt1_data$disapp))
+expt1_data$pcomp2 = PCACalculation$loadings[1,2]*(expt1_data$happy-mean(expt1_data$happy)) + 
+  PCACalculation$loadings[2,2]*(expt1_data$sad-mean(expt1_data$sad)) + 
+  PCACalculation$loadings[3,2]*(expt1_data$anger-mean(expt1_data$anger)) + 
+  PCACalculation$loadings[4,2]*(expt1_data$surprise-mean(expt1_data$surprise)) + 
+  PCACalculation$loadings[5,2]*(expt1_data$disgust-mean(expt1_data$disgust)) + 
+  PCACalculation$loadings[6,2]*(expt1_data$fear-mean(expt1_data$fear)) +
+  PCACalculation$loadings[7,2]*(expt1_data$content-mean(expt1_data$content)) + 
+  PCACalculation$loadings[8,2]*(expt1_data$disapp-mean(expt1_data$disapp))
+
+cor.test(expt1_data$pcomp1, expt1_data$PE)
+cor.test(expt1_data$pcomp2, expt1_data$absPE)
+
+```
+
+### PCA Plots
+
+``` {r expt1-PCA-plots, echo=FALSE, fig.height=4.5, fig.width=4.5, eval=TRUE}
+# modified ggbiplot --> Myggbiplot. (Just added a - sign to the var angle because I'm using scale_y_reverse())
+Myggbiplot(PCACalculation, alpha=0.2, varname.size = 5, varname.adjust=1.5) + scale_y_reverse() + 
+  coord_cartesian(ylim=c(-3.1, 3.1), xlim=c(-3.0,2.5)) + #+ ggtitle("Principal Component Visualization")
+  ylab("Standardized PC2 (15.8% explained variance)") + xlab("Standardized PC1 (59.1% explained variance)")
+# 4.5 by 4.5
+
+ggplot(expt1_data, aes(x=scale(pcomp1), y=scale(pcomp2), color=PE)) + 
+  geom_point(shape=1) + scale_colour_gradientn(colours=rainbow(7)) + 
+  ylab("Standardized PC2") + xlab("Standardized PC1") + 
+  scale_y_reverse(limits = c(3.0, -3.0), breaks=c(3,2,1,0,-1,-2,-3)) + xlim(-3.0,2.5) +
+  theme(legend.justification=c(1,1), legend.position=c(1,0.5), legend.direction="vertical", 
+        legend.margin=unit(0,"cm"), legend.key.size=unit(20,"points"), legend.text=element_text(size = 10)) 
+#4.5 x 4.5
+```
+Figure 4
+
+
+## Expt 2
+
+``` {r expt2-calculation, echo=FALSE, eval=TRUE}
+
+# reading in data from Expt 2
+
+expt2_data = read.csv("data/expt2data.csv")
+
+
+#### ---- Creating the model dataframe ---- ####
+# The model dataframe is collapsed across participants by each scenario (spinnerID).
+model <- data.frame(spinnerID=1:50)
+model$intercept = 1
+model$win <- summarySE(expt1_data, measurevar="win", groupvars=c("spinnerID"))$win
+model$EV <- summarySE(expt1_data, measurevar="EV", groupvars=c("spinnerID"))$EV
+model$payoff1 <- summarySE(expt1_data, measurevar="payoff1", groupvars=c("spinnerID"))$payoff1
+model$payoff2 <- summarySE(expt1_data, measurevar="payoff2", groupvars=c("spinnerID"))$payoff2
+model$payoff3 <- summarySE(expt1_data, measurevar="payoff3", groupvars=c("spinnerID"))$payoff3
+model$prob1 <- summarySE(expt1_data, measurevar="prob1", groupvars=c("spinnerID"))$prob1
+model$prob2 <- summarySE(expt1_data, measurevar="prob2", groupvars=c("spinnerID"))$prob2
+model$prob3 <- summarySE(expt1_data, measurevar="prob3", groupvars=c("spinnerID"))$prob3
+
+# Storing in the model the emotions observed by the participants making the reverse inference
+# This is equal to the mean of the emotions reported by participants in the forward experiment.
+model$happyObserved = summarySE(expt1_data, measurevar="happy", groupvars=c("spinnerID"))$happy
+model$sadObserved = summarySE(expt1_data, measurevar="sad", groupvars=c("spinnerID"))$sad
+model$angerObserved = summarySE(expt1_data, measurevar="anger", groupvars=c("spinnerID"))$anger
+model$surpriseObserved = summarySE(expt1_data, measurevar="surprise", groupvars=c("spinnerID"))$surprise
+model$disgustObserved = summarySE(expt1_data, measurevar="disgust", groupvars=c("spinnerID"))$disgust
+model$fearObserved = summarySE(expt1_data, measurevar="fear", groupvars=c("spinnerID"))$fear
+model$contentObserved = summarySE(expt1_data, measurevar="content", groupvars=c("spinnerID"))$content
+model$disappObserved = summarySE(expt1_data, measurevar="disapp", groupvars=c("spinnerID"))$disapp
+
+# Storing the observed posterior estimates made by participants in the reverse experiment.
+# Change the scale from 1-9 (Likert ratings) to 0-1 ("probability ratings")
+model$ObservedPosterior1 <- (summarySE(expt2_data, measurevar="outcomeEstimate1", groupvars=c("spinnerID"))$outcomeEstimate1 - 1)/8 
+model$ObservedPosterior2 <- (summarySE(expt2_data, measurevar="outcomeEstimate2", groupvars=c("spinnerID"))$outcomeEstimate2 - 1)/8
+model$ObservedPosterior3 <- (summarySE(expt2_data, measurevar="outcomeEstimate3", groupvars=c("spinnerID"))$outcomeEstimate3 - 1)/8
+
+# Normalizing the observed posteriors
+model$ObservedPosteriorSum = model$ObservedPosterior1 + model$ObservedPosterior2 + model$ObservedPosterior3
+model$ObservedPosterior1 <- model$ObservedPosterior1/model$ObservedPosteriorSum
+model$ObservedPosterior2 <- model$ObservedPosterior2/model$ObservedPosteriorSum
+model$ObservedPosterior3 <- model$ObservedPosterior3/model$ObservedPosteriorSum
+
+# Create PE and |PE| variables in the Model dataframe to assist in the calculations.
+model$PE_1 = model$payoff1 - model$EV
+model$PE_2 = model$payoff2 - model$EV
+model$PE_3 = model$payoff3 - model$EV
+model$absPE_1 = abs(model$PE_1)
+model$absPE_2 = abs(model$PE_2)
+model$absPE_3 = abs(model$PE_3)
+
+
+
+
+#### ---- Set Bootstrap parameters ---- ####
+
+# Here, we just set the number of iterations to 1
+numberOfIterations = 1
+bestVarianceSmoothing = rep(-1,numberOfIterations) # to store the variance smoothing parameter
+bestRMSE = rep(-1,numberOfIterations) # to store the RMSE
+bestCor = rep(-1,numberOfIterations) # to store the correlations
+
+expt1_data = expt1_data[order(expt1_data$workerid),]
+
+expt1_dataBoot<-expt1_data
+#### Bootstrap Loop ####
+for(k in 1:numberOfIterations) { # bootstrap loop
+  cat("Iteration number", k, "out of", numberOfIterations, "\n")
+  bootIDs = sample(unique(expt1_data$workerid), length(unique(expt1_data$workerid)), replace = TRUE, prob=NULL)
+  for(m in 1:length(bootIDs)) {
+    expt1_dataBoot[((m-1)*10 + 1): (m*10),] <- expt1_data[expt1_data$workerid %in% bootIDs[m],]
+    expt1_dataBoot$workerid[((m-1)*10 + 1): (m*10)] <- m
+  }
+  
+  
+  #### ---- make expt1_dataBoot ---- ####
+  ### calculate the regression parameters ###  
+    reg.Eqn1 <- lmer(happy    ~ win + PE + absPE + (1|workerid), expt1_dataBoot)
+    reg.Eqn2 <- lmer(sad      ~ win + PE + absPE + (1|workerid), expt1_dataBoot)
+    reg.Eqn3 <- lmer(anger    ~ win + PE + absPE + (1|workerid), expt1_dataBoot)
+    reg.Eqn4 <- lmer(surprise ~ win + PE + absPE + (1|workerid), expt1_dataBoot)
+    reg.Eqn5 <- lmer(disgust  ~ win + PE + absPE + (1|workerid), expt1_dataBoot)
+    reg.Eqn6 <- lmer(fear     ~ win + PE + absPE + (1|workerid), expt1_dataBoot)
+    reg.Eqn7 <- lmer(content  ~ win + PE + absPE + (1|workerid), expt1_dataBoot)
+    reg.Eqn8 <- lmer(disapp   ~ win + PE + absPE + (1|workerid), expt1_dataBoot)
+
+  
+  ### calculate the model's estimated emotions for each of the outcomes
+  model$happyHat1 = fixef(reg.Eqn1)[1]*model$intercept + fixef(reg.Eqn1)[2]*model$payoff1 + fixef(reg.Eqn1)[3]*model$PE_1 + fixef(reg.Eqn1)[4]*model$absPE_1 
+  model$happyHat2 = fixef(reg.Eqn1)[1]*model$intercept + fixef(reg.Eqn1)[2]*model$payoff2 + fixef(reg.Eqn1)[3]*model$PE_2 + fixef(reg.Eqn1)[4]*model$absPE_2 
+  model$happyHat3 = fixef(reg.Eqn1)[1]*model$intercept + fixef(reg.Eqn1)[2]*model$payoff3 + fixef(reg.Eqn1)[3]*model$PE_3 + fixef(reg.Eqn1)[4]*model$absPE_3 
+  
+  model$sadHat1 = fixef(reg.Eqn2)[1]*model$intercept + fixef(reg.Eqn2)[2]*model$payoff1 + fixef(reg.Eqn2)[3]*model$PE_1 + fixef(reg.Eqn2)[4]*model$absPE_1 
+  model$sadHat2 = fixef(reg.Eqn2)[1]*model$intercept + fixef(reg.Eqn2)[2]*model$payoff2 + fixef(reg.Eqn2)[3]*model$PE_2 + fixef(reg.Eqn2)[4]*model$absPE_2 
+  model$sadHat3 = fixef(reg.Eqn2)[1]*model$intercept + fixef(reg.Eqn2)[2]*model$payoff3 + fixef(reg.Eqn2)[3]*model$PE_3 + fixef(reg.Eqn2)[4]*model$absPE_3 
+  
+  model$angerHat1 = fixef(reg.Eqn3)[1]*model$intercept + fixef(reg.Eqn3)[2]*model$payoff1 + fixef(reg.Eqn3)[3]*model$PE_1 + fixef(reg.Eqn3)[4]*model$absPE_1 
+  model$angerHat2 = fixef(reg.Eqn3)[1]*model$intercept + fixef(reg.Eqn3)[2]*model$payoff2 + fixef(reg.Eqn3)[3]*model$PE_2 + fixef(reg.Eqn3)[4]*model$absPE_2 
+  model$angerHat3 = fixef(reg.Eqn3)[1]*model$intercept + fixef(reg.Eqn3)[2]*model$payoff3 + fixef(reg.Eqn3)[3]*model$PE_3 + fixef(reg.Eqn3)[4]*model$absPE_3 
+  
+  model$surpriseHat1 = fixef(reg.Eqn4)[1]*model$intercept + fixef(reg.Eqn4)[2]*model$payoff1 + fixef(reg.Eqn4)[3]*model$PE_1 + fixef(reg.Eqn4)[4]*model$absPE_1 
+  model$surpriseHat2 = fixef(reg.Eqn4)[1]*model$intercept + fixef(reg.Eqn4)[2]*model$payoff2 + fixef(reg.Eqn4)[3]*model$PE_2 + fixef(reg.Eqn4)[4]*model$absPE_2 
+  model$surpriseHat3 = fixef(reg.Eqn4)[1]*model$intercept + fixef(reg.Eqn4)[2]*model$payoff3 + fixef(reg.Eqn4)[3]*model$PE_3 + fixef(reg.Eqn4)[4]*model$absPE_3 
+  
+  model$disgustHat1 = fixef(reg.Eqn5)[1]*model$intercept + fixef(reg.Eqn5)[2]*model$payoff1 + fixef(reg.Eqn5)[3]*model$PE_1 + fixef(reg.Eqn5)[4]*model$absPE_1 
+  model$disgustHat2 = fixef(reg.Eqn5)[1]*model$intercept + fixef(reg.Eqn5)[2]*model$payoff2 + fixef(reg.Eqn5)[3]*model$PE_2 + fixef(reg.Eqn5)[4]*model$absPE_2 
+  model$disgustHat3 = fixef(reg.Eqn5)[1]*model$intercept + fixef(reg.Eqn5)[2]*model$payoff3 + fixef(reg.Eqn5)[3]*model$PE_3 + fixef(reg.Eqn5)[4]*model$absPE_3 
+  
+  model$fearHat1 = fixef(reg.Eqn6)[1]*model$intercept + fixef(reg.Eqn6)[2]*model$payoff1 + fixef(reg.Eqn6)[3]*model$PE_1 + fixef(reg.Eqn6)[4]*model$absPE_1 
+  model$fearHat2 = fixef(reg.Eqn6)[1]*model$intercept + fixef(reg.Eqn6)[2]*model$payoff2 + fixef(reg.Eqn6)[3]*model$PE_2 + fixef(reg.Eqn6)[4]*model$absPE_2 
+  model$fearHat3 = fixef(reg.Eqn6)[1]*model$intercept + fixef(reg.Eqn6)[2]*model$payoff3 + fixef(reg.Eqn6)[3]*model$PE_3 + fixef(reg.Eqn6)[4]*model$absPE_3 
+  
+  model$contentHat1 = fixef(reg.Eqn7)[1]*model$intercept + fixef(reg.Eqn7)[2]*model$payoff1 + fixef(reg.Eqn7)[3]*model$PE_1 + fixef(reg.Eqn7)[4]*model$absPE_1 
+  model$contentHat2 = fixef(reg.Eqn7)[1]*model$intercept + fixef(reg.Eqn7)[2]*model$payoff2 + fixef(reg.Eqn7)[3]*model$PE_2 + fixef(reg.Eqn7)[4]*model$absPE_2 
+  model$contentHat3 = fixef(reg.Eqn7)[1]*model$intercept + fixef(reg.Eqn7)[2]*model$payoff3 + fixef(reg.Eqn7)[3]*model$PE_3 + fixef(reg.Eqn7)[4]*model$absPE_3 
+  
+  model$disappHat1 = fixef(reg.Eqn8)[1]*model$intercept + fixef(reg.Eqn8)[2]*model$payoff1 + fixef(reg.Eqn8)[3]*model$PE_1 + fixef(reg.Eqn8)[4]*model$absPE_1 
+  model$disappHat2 = fixef(reg.Eqn8)[1]*model$intercept + fixef(reg.Eqn8)[2]*model$payoff2 + fixef(reg.Eqn8)[3]*model$PE_2 + fixef(reg.Eqn8)[4]*model$absPE_2 
+  model$disappHat3 = fixef(reg.Eqn8)[1]*model$intercept + fixef(reg.Eqn8)[2]*model$payoff3 + fixef(reg.Eqn8)[3]*model$PE_3 + fixef(reg.Eqn8)[4]*model$absPE_3 
+  
+  #### ---- optimizing over varianceSmoothing ---- ####
+  # Running varianceSmoothing from 1.1 to 5.0 in increments of 0.1
+  modelRMSE = data.frame(variance=rep(1, 40), RMSE=rep(1, 40), correlation=rep(1, 40)) 
+  for(j in 1:40) { # Test variance smoothing from 1.1 to 5.0. Going down the trials
+    # setting the variance smoothing parameter
+    varianceSmoothing = j/10 + 1 
+    
+    # Calculating the likelihood of each emotion for each outcome P(happy|o1) P(happy|o2), P(happy|o3); P(sad|o1), etc.
+      model$happyLikelihood1 = dnorm(model$happyHat1 - model$happyObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn1), "sc"))
+      model$happyLikelihood2 = dnorm(model$happyHat2 - model$happyObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn1), "sc"))
+      model$happyLikelihood3 = dnorm(model$happyHat3 - model$happyObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn1), "sc"))
+
+      model$sadLikelihood1 = dnorm(model$sadHat1 - model$sadObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn2), "sc"))
+      model$sadLikelihood2 = dnorm(model$sadHat2 - model$sadObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn2), "sc"))
+      model$sadLikelihood3 = dnorm(model$sadHat3 - model$sadObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn2), "sc"))
+
+      model$angerLikelihood1 = dnorm(model$angerHat1 - model$angerObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn3), "sc"))
+      model$angerLikelihood2 = dnorm(model$angerHat2 - model$angerObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn3), "sc"))
+      model$angerLikelihood3 = dnorm(model$angerHat3 - model$angerObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn3), "sc"))
+
+      model$surpriseLikelihood1 = dnorm(model$surpriseHat1 - model$surpriseObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn4), "sc"))
+      model$surpriseLikelihood2 = dnorm(model$surpriseHat2 - model$surpriseObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn4), "sc"))
+      model$surpriseLikelihood3 = dnorm(model$surpriseHat3 - model$surpriseObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn4), "sc"))
+
+      model$disgustLikelihood1 = dnorm(model$disgustHat1 - model$disgustObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn5), "sc"))
+      model$disgustLikelihood2 = dnorm(model$disgustHat2 - model$disgustObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn5), "sc"))
+      model$disgustLikelihood3 = dnorm(model$disgustHat3 - model$disgustObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn5), "sc"))
+
+      model$fearLikelihood1 = dnorm(model$fearHat1 - model$fearObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn6), "sc"))
+      model$fearLikelihood2 = dnorm(model$fearHat2 - model$fearObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn6), "sc"))
+      model$fearLikelihood3 = dnorm(model$fearHat3 - model$fearObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn6), "sc"))
+
+      model$contentLikelihood1 = dnorm(model$contentHat1 - model$contentObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn7), "sc"))
+      model$contentLikelihood2 = dnorm(model$contentHat2 - model$contentObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn7), "sc"))
+      model$contentLikelihood3 = dnorm(model$contentHat3 - model$contentObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn7), "sc"))
+
+      model$disappLikelihood1 = dnorm(model$disappHat1 - model$disappObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn8), "sc"))
+      model$disappLikelihood2 = dnorm(model$disappHat2 - model$disappObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn8), "sc"))
+      model$disappLikelihood3 = dnorm(model$disappHat3 - model$disappObserved, mean = 0, sd = varianceSmoothing*attr(VarCorr(reg.Eqn8), "sc"))
+    
+    # Caclulating the joint likelihood of each outcome from the individual emotion likelihoods.
+    # P(e|o1) = P(happy|o1) * P(sad|o1) ...
+    model$JointLikelihood1 = model$happyLikelihood1 * model$sadLikelihood1 * model$angerLikelihood1 * model$surpriseLikelihood1 *
+      model$disgustLikelihood1 * model$fearLikelihood1 * model$contentLikelihood1 * model$disappLikelihood1
+    model$JointLikelihood2 = model$happyLikelihood2 * model$sadLikelihood2 * model$angerLikelihood2 * model$surpriseLikelihood2 *
+      model$disgustLikelihood2 * model$fearLikelihood2 * model$contentLikelihood2 * model$disappLikelihood2
+    model$JointLikelihood3 = model$happyLikelihood3 * model$sadLikelihood3 * model$angerLikelihood3 * model$surpriseLikelihood3 *
+      model$disgustLikelihood3 * model$fearLikelihood3 * model$contentLikelihood3 * model$disappLikelihood3
+    
+    # Calculating the posterior of the three outcomes from the likelihood and the prior
+    # P(o1|e) proportional to P(e|o1) P(o1)
+    model$EstimatedPosterior1 = model$JointLikelihood1 * model$prob1
+    model$EstimatedPosterior2 = model$JointLikelihood2 * model$prob2
+    model$EstimatedPosterior3 = model$JointLikelihood3 * model$prob3
+    
+    # Normalizing the posteriors
+    model$JointSum = model$EstimatedPosterior1 + model$EstimatedPosterior2 + model$EstimatedPosterior3
+    model$EstimatedPosterior1 <- model$EstimatedPosterior1/model$JointSum
+    model$EstimatedPosterior2 <- model$EstimatedPosterior2/model$JointSum
+    model$EstimatedPosterior3 <- model$EstimatedPosterior3/model$JointSum
+    
+    # Forming vectors of all the outcomes
+    EstPosterior = c(model$EstimatedPosterior1, model$EstimatedPosterior2, model$EstimatedPosterior3)
+    ObsPosterior = c(model$ObservedPosterior1, model$ObservedPosterior2, model$ObservedPosterior3)
+    
+    # Storing the parameters for this run of optimizing j
+    modelRMSE[j,1] = varianceSmoothing
+    # minimizing root-mean-squared-error of y-x (i.e. for a straight line)
+    modelRMSE[j,2] = sqrt(mean((ObsPosterior-EstPosterior)^2))
+    modelRMSE[j,3] = cor(EstPosterior,ObsPosterior)
+  }
+  
+  # Store the best parameters for this bootstrap iteration k
+  bestVarianceSmoothing[k] = modelRMSE[which.min(modelRMSE$RMSE),1]
+  bestRMSE[k] = modelRMSE[which.min(modelRMSE$RMSE),2]
+  bestCor[k] = modelRMSE[which.min(modelRMSE$RMSE),3] 
+} # end bootstrap loop
+```
+
+
+
+# Cue Integration
+
+```{r cueIntModel, echo=FALSE}
+
+# This is the function that calculates the cue integration model
+#   It's the same model for Faces, in Expt3, and Utterances, in Expt4
+#   hence we abstracted this out as a function, and call it twice.
+#   (we also used this function to bootstrap results)
+#   Note that the variables are called "FaceIDs" after Expt 3, but is interchangable with "UtteranceIDs" in Expt4.
+
+calculateModel <- function(data.semi, listOfEmotions, listOfFaceIDs, listOfSpinnerIDs) {
+  emotionValueTotal = 9  # maximum value of the emotion. [1,9] scale.
+  spinnerIDTotal = length(listOfSpinnerIDs)
+  faceIDTotal = length(listOfFaceIDs)
+  emotionTypeTotal = length(listOfEmotions)
+  
+  # Creating 3 subsets of data, as depicted in Fig 9.
+  onlyFace = subset(data.semi, (data.semi$occludeWheel==1) & (data.semi$occludeFace==0))
+  onlyWheel = subset(data.semi, (data.semi$occludeWheel==0) & (data.semi$occludeFace==1))
+  bothFaceWheel = subset(data.semi, (data.semi$occludeWheel==0) & (data.semi$occludeFace==0))
+  
+  reg.Eqn1 <- lmer(happy    ~ win + PE + absPE + (1|workerid), onlyWheel)
+  reg.Eqn2 <- lmer(sad      ~ win + PE + absPE + (1|workerid), onlyWheel)
+  reg.Eqn3 <- lmer(anger    ~ win + PE + absPE + (1|workerid), onlyWheel)
+  reg.Eqn4 <- lmer(surprise ~ win + PE + absPE + (1|workerid), onlyWheel)
+  reg.Eqn5 <- lmer(disgust  ~ win + PE + absPE + (1|workerid), onlyWheel)
+  reg.Eqn6 <- lmer(fear     ~ win + PE + absPE + (1|workerid), onlyWheel)
+  reg.Eqn7 <- lmer(content  ~ win + PE + absPE + (1|workerid), onlyWheel)
+  reg.Eqn8 <- lmer(disapp   ~ win + PE + absPE + (1|workerid), onlyWheel)
+    
+  bothMelted = melt(bothFaceWheel, id=c("workerid", "spinnerID", "faceID"), 
+                    measure=c("happy", "sad", "anger", "surprise", "disgust", "fear", "content", "disapp"))
+  faceMelted = melt(onlyFace, id=c("workerid", "spinnerID", "faceID"), 
+                    measure=c("happy", "sad", "anger", "surprise", "disgust", "fear", "content", "disapp"))
+  wheelMelted = melt(onlyWheel, id=c("workerid", "spinnerID", "faceID", "winProb", "win", "PE", "absPE", 
+                                     "payoff1", "payoff2", "payoff3", "prob1", "prob2", "prob3", "EV"), 
+                     measure=c("happy", "sad", "anger", "surprise", "disgust", "fear", "content", "disapp"))
+   
+  finalComparison = data.frame()
+  for(j in 1:length(listOfEmotions)) { # emotions
+    emotionToUse = listOfEmotions[j]
+    for(k in 1:length(listOfFaceIDs)) { # faceID
+      faceIDtoUse = listOfFaceIDs[k]
+      for(l in 1:length(listOfSpinnerIDs)) { # spinnerID
+        spinnerIDtoUse = listOfSpinnerIDs[l]
+        
+        fullSubsetToExamine = subset(bothMelted, spinnerID==spinnerIDtoUse & 
+                                       faceID==faceIDtoUse & variable==emotionToUse)
+        faceSubsetToExamine = subset(faceMelted, faceID==faceIDtoUse & variable==emotionToUse)
+        wheelSubsetToExamine = subset(wheelMelted, spinnerID==spinnerIDtoUse & variable==emotionToUse)
+        
+        eval(parse( text=paste(paste('regEqnToUse <-  reg.Eqn', toString(j), sep = ""), ' ', sep = "") ))
+        wheelSubsetToExamine$intercept = 1
+
+        wheelSubsetToExamine$eHat    = fixef(regEqnToUse)[1]*wheelSubsetToExamine$intercept + 
+          fixef(regEqnToUse)[2]*wheelSubsetToExamine$win + 
+          fixef(regEqnToUse)[3]*wheelSubsetToExamine$PE + 
+          fixef(regEqnToUse)[4]*wheelSubsetToExamine$absPE
+        wheelSubsetToExamine$eHatOutcome1    = fixef(regEqnToUse)[1]*wheelSubsetToExamine$intercept + 
+          fixef(regEqnToUse)[2]*wheelSubsetToExamine$payoff1 + 
+          fixef(regEqnToUse)[3]*(wheelSubsetToExamine$payoff1-wheelSubsetToExamine$EV) + 
+          fixef(regEqnToUse)[4]*abs(wheelSubsetToExamine$payoff1-wheelSubsetToExamine$EV)
+        wheelSubsetToExamine$eHatOutcome2    = fixef(regEqnToUse)[1]*wheelSubsetToExamine$intercept + 
+          fixef(regEqnToUse)[2]*wheelSubsetToExamine$payoff2 + 
+          fixef(regEqnToUse)[3]*(wheelSubsetToExamine$payoff2-wheelSubsetToExamine$EV) + 
+          fixef(regEqnToUse)[4]*abs(wheelSubsetToExamine$payoff2-wheelSubsetToExamine$EV)
+        wheelSubsetToExamine$eHatOutcome3    = fixef(regEqnToUse)[1]*wheelSubsetToExamine$intercept + 
+          fixef(regEqnToUse)[2]*wheelSubsetToExamine$payoff3 + 
+          fixef(regEqnToUse)[3]*(wheelSubsetToExamine$payoff3-wheelSubsetToExamine$EV) + 
+          fixef(regEqnToUse)[4]*abs(wheelSubsetToExamine$payoff3-wheelSubsetToExamine$EV)
+        
+        # edge cases: if, after slicing up the dataset too finely, we get too little observations
+        if(nrow(fullSubsetToExamine)==1) {
+          fullDensity = density(rep(fullSubsetToExamine$value,2), from=1, to=9)
+        } else if (nrow(fullSubsetToExamine)==0) {
+          fullDensity = density(c(0,0), from=1, to=9)
+          fullDensity$y = rep(1/(length(fullDensity$y)),(length(fullDensity$y)))
+        } else {
+          fullDensity = density(fullSubsetToExamine$value, from=1, to=9)
+        }
+        
+        faceDensity = density(faceSubsetToExamine$value, from=1, to=9)
+        for(m in 1:emotionValueTotal) { # value
+          finalComparison = rbind(finalComparison,
+                                  data.frame(faceID = faceIDtoUse,
+                                             spinnerID = spinnerIDtoUse,
+                                             emotion = emotionToUse,
+                                             emoValue = m,
+                                             empiricalProb = fullDensity$y[(max(1,(m-1)*512/8))],
+                                             faceProb = faceDensity$y[(max(1,(m-1)*512/8))],
+                                              wheelProb = dnorm(m - wheelSubsetToExamine$eHat[1], mean = 0, sd = attr(VarCorr(regEqnToUse), "sc")),
+                                              emoProb = dnorm(m - wheelSubsetToExamine$eHatOutcome1[1], mean = 0, sd = attr(VarCorr(regEqnToUse), "sc")) * wheelSubsetToExamine$prob1[1] +
+                                                        dnorm(m - wheelSubsetToExamine$eHatOutcome2[1], mean = 0, sd = attr(VarCorr(regEqnToUse), "sc")) * wheelSubsetToExamine$prob2[1] +
+                                                        dnorm(m - wheelSubsetToExamine$eHatOutcome3[1], mean = 0, sd = attr(VarCorr(regEqnToUse), "sc")) * wheelSubsetToExamine$prob3[1]
+                                  )
+          )
+          # Empirical probability for P(e|o,f) is taken from the "both face + wheel" condition
+          # Face probability, P(e|f) is taken from the "only face" condition
+          # Wheel probability, P(e|o) is taken from "only wheel" condition
+          # emoProb contains the sum: P(e|o')P(o')
+        }
+        rowNumber = m + (l-1)*emotionValueTotal + (k-1)*(emotionValueTotal*spinnerIDTotal) + (j-1)*(emotionValueTotal*spinnerIDTotal*faceIDTotal)
+        # If using Density Smoothed, normalize empiricalProb and faceProb
+        finalComparison$empiricalProb[(rowNumber-8):rowNumber] = finalComparison$empiricalProb[(rowNumber-8):rowNumber] / sum(finalComparison$empiricalProb[(rowNumber-8):rowNumber])
+        finalComparison$faceProb[(rowNumber-8):rowNumber] = finalComparison$faceProb[(rowNumber-8):rowNumber] / sum(finalComparison$faceProb[(rowNumber-8):rowNumber])
+        
+        # Normalizing P(e|o)
+        finalComparison$wheelProb[(rowNumber-8):rowNumber] = finalComparison$wheelProb[(rowNumber-8):rowNumber] / sum(finalComparison$wheelProb[(rowNumber-8):rowNumber])
+        # Correct: P(e|o)P(o) should be counted from the other possible outcomes on each wheel. (Not necessarily seen)
+        finalComparison$emoProb[(rowNumber-8):rowNumber] = finalComparison$emoProb[(rowNumber-8):rowNumber] / sum(finalComparison$emoProb[(rowNumber-8):rowNumber])
+      }      
+    }  
+  }
+  
+  finalComparison$modelProb = finalComparison$faceProb*finalComparison$wheelProb/finalComparison$emoProb
+  # Normalizing the modelProb. Every 9 values should sum up to 1.
+  for(l in 1:(spinnerIDTotal*faceIDTotal*emotionTypeTotal)) {
+    finalComparison$modelProb[((l-1)*9+1):(l*9)] = finalComparison$modelProb[((l-1)*9+1):(l*9)] / sum(finalComparison$modelProb[((l-1)*9+1):(l*9)])
+  }
+  
+  return(finalComparison)
+}
+```
+
+``` {r expt-3, echo=FALSE}
+#### ---- Reading in data ---- ####
+expt3.semi <- read.csv('data/expt3data.csv', header=TRUE)
+
+listOfEmotions = c("happy", "sad", "anger", "surprise", "disgust", "fear", "content", "disapp")
+listOfFaceIDs = c(1,4,7,29, 32, 35, 9,13,17,19,23,27,36,37,38,39,40,41)   # the faceIDs are a subset of a larget set that we created with different expressions.
+listOfSpinnerIDs = c(1,9,12,14,16,24,32,41,47,49)  # we only used 10 of the 50 that were used in Expt 1
+
+expt3 = calculateModel(expt3.semi, listOfEmotions, listOfFaceIDs, listOfSpinnerIDs)
+
+expt3$expectedEmpiricalProbTimesValue = expt3$empiricalProb * expt3$emoValue
+expt3$expectedBayesProbTimesValue = expt3$modelProb * expt3$emoValue
+expt3$expectedFaceProbTimesValue = expt3$faceProb * expt3$emoValue
+expt3$expectedWheelProbTimesValue = expt3$wheelProb * expt3$emoValue
+
+expt3expected = aggregate(expectedEmpiricalProbTimesValue ~ faceID + spinnerID + emotion, expt3, sum)
+colnames(expt3expected)[4] <- "expectedEmpirical"
+expt3expected$expectedBayes = aggregate(expectedBayesProbTimesValue ~ faceID + spinnerID + emotion, expt3, sum)$expectedBayesProbTimesValue
+expt3expected$expectedFace = aggregate(expectedFaceProbTimesValue ~ faceID + spinnerID + emotion, expt3, sum)$expectedFaceProbTimesValue
+expt3expected$expectedWheel = aggregate(expectedWheelProbTimesValue ~ faceID + spinnerID + emotion, expt3, sum)$expectedWheelProbTimesValue
+
+#### ---- Analysis for Expt3 (face + wheel) ---- ####
+
+cor(expt3expected$expectedEmpirical,expt3expected$expectedBayes) # R = .862
+cor(expt3expected$expectedEmpirical,expt3expected$expectedFace) # R = .781
+cor(expt3expected$expectedEmpirical,expt3expected$expectedWheel) # R = .735
+
+#### -- Subset by conflict condition -- ####
+# positive faces: 7, 13, 19, 27, 35
+# negative faces: 1, 9, 17, 23, 29
+# neutral faces: 4, 32
+# ambiguous faces: 36-41
+
+expt3expected$facePositive = 1*(expt3expected$faceID == 7 | expt3expected$faceID == 13 | 
+                                  expt3expected$faceID == 19 | expt3expected$faceID == 27 | 
+                                  expt3expected$faceID == 35)
+expt3expected$faceNegative = 1*(expt3expected$faceID == 1 | expt3expected$faceID == 9 | 
+                                  expt3expected$faceID == 17 | expt3expected$faceID == 23 | 
+                                  expt3expected$faceID == 29)
+expt3expected$spinnerPositive = 1*(expt3expected$spinnerID%%3 == 0)
+expt3expected$spinnerNegative = 1*(expt3expected$spinnerID%%3 == 1)
+
+## --- Start: test if negative face e|f is less reliable? ---
+negFace = subset(expt3, expt3$faceID == 1 | expt3$faceID == 9 | expt3$faceID == 17 | 
+                   expt3$faceID == 23 | expt3$faceID == 29); 
+negFace = subset(negFace, negFace$spinnerID==1)
+#ggplot(negFace, aes(x=emoValue, y=faceProb)) + geom_line(colour="red") +
+#  ggtitle("Negative faces") + theme_bw() + facet_grid(faceID~emotion)
+posFace = subset(expt3, expt3$faceID == 7 | expt3$faceID == 13 | expt3$faceID == 19 | 
+                   expt3$faceID == 27 | expt3$faceID == 35); 
+posFace = subset(posFace, posFace$spinnerID==1)
+#ggplot(posFace, aes(x=emoValue, y=faceProb)) + geom_line(colour="blue") +
+#  ggtitle("Positive faces") + theme_bw() + facet_grid(faceID~emotion)
+
+negFace$faceEntropy = -1*negFace$faceProb*log2(negFace$faceProb)
+negFace$faceEntropy[ is.nan(negFace$faceEntropy) ] <- 0
+negFaceAgg = aggregate(faceEntropy ~ faceID + emotion, negFace, sum)
+posFace$faceEntropy = -1*posFace$faceProb*log2(posFace$faceProb)
+posFace$faceEntropy[ is.nan(posFace$faceEntropy) ] <- 0
+posFaceAgg = aggregate(faceEntropy ~ faceID + emotion, posFace, sum)
+
+#t.test(posFaceAgg$faceEntropy, negFaceAgg$faceEntropy)
+
+negFaceAgg1 = aggregate(faceEntropy ~ emotion, negFaceAgg, mean) #mean(negFaceAgg1$faceEntropy); sd(negFaceAgg1$faceEntropy)
+posFaceAgg1 = aggregate(faceEntropy ~ emotion, posFaceAgg, mean) #mean(posFaceAgg1$faceEntropy); sd(posFaceAgg1$faceEntropy)
+t.test(posFaceAgg1$faceEntropy, negFaceAgg1$faceEntropy, paired=T)
+
+## --- End: test if negative face e|f is less reliable ---
+
+
+
+## --- Start: test if negative wheel e|o is less reliable? ---
+
+negWheel = subset(expt3, ((expt3$spinnerID%%3) == 1)); negWheel = subset(negWheel, negWheel$faceID==1)
+#ggplot(negWheel, aes(x=emoValue, y=wheelProb)) + geom_line(colour="red") +
+#  ggtitle("Negative wheels") + theme_bw() + facet_grid(spinnerID~emotion)
+posWheel = subset(expt3, ((expt3$spinnerID%%3) == 0)); posWheel = subset(posWheel, posWheel$faceID==1)
+#ggplot(posWheel, aes(x=emoValue, y=wheelProb)) + geom_line(colour="blue") +
+#  ggtitle("Positive wheels") + theme_bw() + facet_grid(spinnerID~emotion)
+
+negWheel$wheelEntropy = -1*negWheel$wheelProb*log2(negWheel$wheelProb)
+negWheel$wheelEntropy[ is.nan(negWheel$wheelEntropy) ] <- 0
+negWheelAgg = aggregate(wheelEntropy ~ spinnerID + emotion, negWheel, sum)
+posWheel$wheelEntropy = -1*posWheel$wheelProb*log2(posWheel$wheelProb)
+posWheel$wheelEntropy[ is.nan(posWheel$wheelEntropy) ] <- 0
+posWheelAgg = aggregate(wheelEntropy ~ spinnerID + emotion, posWheel, sum)
+
+#t.test(posWheelAgg$wheelEntropy, negWheelAgg$wheelEntropy)
+
+negWheelAgg1 = aggregate(wheelEntropy ~ emotion, negWheelAgg, mean) #mean(negWheelAgg1$wheelEntropy); sd(negWheelAgg1$wheelEntropy)
+posWheelAgg1 = aggregate(wheelEntropy ~ emotion, posWheelAgg, mean) #mean(posWheelAgg1$wheelEntropy); sd(posWheelAgg1$wheelEntropy)
+t.test(posWheelAgg1$wheelEntropy, negWheelAgg1$wheelEntropy, paired=T)
+
+## --- End: test if negative wheel e|o is less reliable? ---
+
+
+```
+
+``` {r expt3-bootstrapped-plots1, echo=FALSE, fig.width=7.8, fig.height=4}
+#### ---- Reading in bootstrapped data ---- ####
+
+# the bootstrap was originally done using the model function defined above, bootstrapped on a cluster.
+
+expt3BS <- read.csv('data/expt3_bootstrapped.csv', header=TRUE)
+apply(expt3BS, 2, function(x) quantile(x, .500))
+apply(expt3BS, 2, function(x) quantile(x, .025))
+apply(expt3BS, 2, function(x) quantile(x, .975))
+
+summaryCorrelationBS = data.frame(experiment = rep("Exp3", 9),
+                                  comparison = c( rep("All", 3),
+                                                  rep("NegFace+PosWheel", 3),
+                                                  rep("PosFace+NegWheel", 3) ), 
+                                  model = rep(c("Bayes", "Face-only", "Wheel-only"), 3),
+                                  correlation = c(as.numeric(apply(expt3BS, 2, function(x) quantile(x, .500)))[1:9]),
+                                  correlation.cih = c(as.numeric(apply(expt3BS, 2, function(x) quantile(x, .975)))[1:9]),
+                                  correlation.cil = c(as.numeric(apply(expt3BS, 2, function(x) quantile(x, .025)))[1:9]),
+                                  rmse = c(as.numeric(apply(expt3BS, 2, function(x) quantile(x, .500)))[10:18]),
+                                  rmse.cih = c(as.numeric(apply(expt3BS, 2, function(x) quantile(x, .975)))[10:18]),
+                                  rmse.cil = c(as.numeric(apply(expt3BS, 2, function(x) quantile(x, .025)))[10:18])
+)
+
+# p1: root mean square error
+p1 <- ggplot(summaryCorrelationBS, aes(x=comparison, y=rmse, fill=model, group=model)) + 
+  geom_bar(stat="identity", position=position_dodge(), colour="black") +
+  geom_errorbar(aes(ymin=rmse.cih, ymax=rmse.cil), size=.3, width=.2, position=position_dodge(.9)) +
+  scale_fill_manual(values=c("#F0E442", "#0072B2", "#D55E00"), name="Model", labels=c("Bayes", "Face-only", "Outcome only")) +
+  theme_bw() + xlab("") + ylab("Root Mean Squared Error") + 
+  theme(strip.background = element_rect(fill="#FFFFFF"), 
+        strip.text = element_text(size=14),
+        axis.text = element_text(size=12),
+        axis.title.x = element_text(size=14, vjust=-0.2),
+        axis.title.y = element_text(size=14, vjust=0.35),
+        legend.text = element_text(size=12),
+        panel.grid = element_blank())
+
+# p2: correlation
+p2 <- ggplot(summaryCorrelationBS, aes(x=comparison, y=correlation, fill=model, group=model)) + 
+  geom_bar(stat="identity", position=position_dodge(), colour="black") +
+  geom_errorbar(aes(ymin=correlation.cil, ymax=correlation.cih), size=.3, width=.2, position=position_dodge(.9)) +
+  scale_fill_manual(values=cbPal, name="Model", labels=c("Bayes", "Face-only", "Outcome only")) +
+  theme_bw() + xlab("") + ylab("Correlation") + 
+  theme(strip.background = element_rect(fill="#FFFFFF"), 
+        strip.text = element_text(size=14),
+        axis.text = element_text(size=12),
+        axis.title.x = element_text(size=14, vjust=-0.2),
+        axis.title.y = element_text(size=14, vjust=0.35),
+        legend.text = element_text(size=12),
+        panel.grid = element_blank())
+
+p1
+p2
+
+# exp3_conflict_rmse, exp3_conflict_corr, exp3_conflict_bayesCorr (5.5 by 5)
+```
+
+``` {r expt3-bootstrapped-plots2, echo=FALSE, fig.width=5.5, fig.height=5}
+# p3: Bayesian model performance (unbootstrapped)
+p3 <- ggplot(expt3expected, aes(x=expectedBayes, y=expectedEmpirical)) + geom_point(shape=1, size=1.5) +
+  geom_abline(intercept = 0, slope = 1, linetype="dashed", color="red") + # "y=x" line
+  scale_y_continuous(limits=c(1, 9)) + scale_x_continuous(limits=c(1, 9)) + 
+  theme_bw() + xlab("Bayesian Model Predictions") + ylab("Participants' emotion attribution") +
+  theme(strip.background = element_rect(fill="#FFFFFF"), 
+        strip.text = element_text(size=14),
+        axis.text = element_text(size=14),
+        axis.title.x = element_text(size=16, vjust=-0.2),
+        axis.title.y = element_text(size=16, vjust=0.35),
+        legend.text = element_text(size=12),
+        panel.grid = element_blank())
+
+p3
+```
+
+
+``` {r expt4-analysis, echo=FALSE}
+expt4.semi <- read.csv('data/expt4data.csv', header=TRUE)
+
+expt4.semi$utteranceID = factor(expt4.semi$utteranceID, levels = c(2,3,1,4,6,9,10,8,5,7),
+                                 labels = c("awesome", "yay", "cool", "wow", "oh", "meh", "yikes", "dang", "man","damn"))
+expt4.semi$faceID = expt4.semi$utteranceID
+expt4.semi$occludeFace = expt4.semi$occludeUtterance
+
+listOfEmotions = c("happy", "sad", "anger", "surprise", "disgust", "fear", "content", "disapp")
+listOfFaceIDs = c("awesome", "yay", "cool", "wow", "oh", "meh", "yikes", "dang", "man","damn")
+listOfSpinnerIDs = c(1,9,12,14,16,24,32,41,47,49)
+
+expt4 = calculateModel(expt4.semi, listOfEmotions, listOfFaceIDs, listOfSpinnerIDs)
+
+expt4$expectedEmpiricalProbTimesValue = expt4$empiricalProb * expt4$emoValue
+expt4$expectedBayesProbTimesValue = expt4$modelProb * expt4$emoValue
+expt4$expectedFaceProbTimesValue = expt4$faceProb * expt4$emoValue
+expt4$expectedWheelProbTimesValue = expt4$wheelProb * expt4$emoValue
+
+expt4expected = aggregate(expectedEmpiricalProbTimesValue ~ faceID + spinnerID + emotion, expt4, sum)
+colnames(expt4expected)[4] <- "expectedEmpirical"
+expt4expected$expectedBayes = aggregate(expectedBayesProbTimesValue ~ faceID + spinnerID + emotion, expt4, sum)$expectedBayesProbTimesValue
+expt4expected$expectedFace = aggregate(expectedFaceProbTimesValue ~ faceID + spinnerID + emotion, expt4, sum)$expectedFaceProbTimesValue
+expt4expected$expectedWheel = aggregate(expectedWheelProbTimesValue ~ faceID + spinnerID + emotion, expt4, sum)$expectedWheelProbTimesValue
+
+#### ---- Analysis for expt4 (face + utterance) ---- ####
+
+# # plot happy responses as a function of the utteranceID
+# ggplot(subset(expt4, emotion=="happy"), aes(x=emoValue, y=faceProb)) + geom_line() + facet_grid(spinnerID ~ faceID)
+# ggplot(subset(expt4expected, emotion=="happy"), aes(x=faceID, y=expectedFace, fill=expectedFace)) + geom_bar(stat="identity", position=position_dodge(), colour="black")
+
+cor(expt4expected$expectedEmpirical,expt4expected$expectedBayes) # R = .819
+cor(expt4expected$expectedEmpirical,expt4expected$expectedFace) # R = .638
+cor(expt4expected$expectedEmpirical,expt4expected$expectedWheel) # R = .724
+
+## --- Start: test if wheel entropy is greater --- 
+negWheel = subset(expt4, ((expt4$spinnerID%%3) == 1)); negWheel = subset(negWheel, negWheel$faceID=="damn")
+#ggplot(negWheel, aes(x=emoValue, y=wheelProb)) + geom_line(colour="red") +
+#  ggtitle("Negative wheels") + theme_bw() + facet_grid(spinnerID~emotion)
+posWheel = subset(expt4, ((expt4$spinnerID%%3) == 0)); posWheel = subset(posWheel, posWheel$faceID=="damn")
+#ggplot(posWheel, aes(x=emoValue, y=wheelProb)) + geom_line(colour="blue") +
+#  ggtitle("Positive wheels") + theme_bw() + facet_grid(spinnerID~emotion)
+
+negWheel$wheelEntropy = -1*negWheel$wheelProb*log2(negWheel$wheelProb)
+negWheel$wheelEntropy[ is.nan(negWheel$wheelEntropy) ] <- 0
+negWheelAgg = aggregate(wheelEntropy ~ spinnerID + emotion, negWheel, sum)
+posWheel$wheelEntropy = -1*posWheel$wheelProb*log2(posWheel$wheelProb)
+posWheel$wheelEntropy[ is.nan(posWheel$wheelEntropy) ] <- 0
+posWheelAgg = aggregate(wheelEntropy ~ spinnerID + emotion, posWheel, sum)
+
+negWheelAgg1 = aggregate(wheelEntropy ~ emotion, negWheelAgg, mean) #mean(negWheelAgg1$wheelEntropy); sd(negWheelAgg1$wheelEntropy)
+posWheelAgg1 = aggregate(wheelEntropy ~ emotion, posWheelAgg, mean) #mean(posWheelAgg1$wheelEntropy); sd(posWheelAgg1$wheelEntropy)
+t.test(posWheelAgg1$wheelEntropy, negWheelAgg1$wheelEntropy, paired=T)
+
+
+
+
+## --- Start: testing if entropy is greater ---
+negFace = subset(expt4, expt4$faceID == "damn" | expt4$faceID == "man" | expt4$faceID == "dang" | expt4$faceID == "yikes"); negFace = subset(negFace, negFace$spinnerID==1)
+#ggplot(negFace, aes(x=emoValue, y=faceProb)) + geom_line(colour="red") + ggtitle("Negative utterances") + theme_bw() + facet_grid(faceID~emotion)
+posFace = subset(expt4, expt4$faceID == "awesome" | expt4$faceID == "yay" | expt4$faceID == "cool" | expt4$faceID == "wow"); posFace = subset(posFace, posFace$spinnerID==1)
+#ggplot(posFace, aes(x=emoValue, y=faceProb)) + geom_line(colour="blue") + ggtitle("Positive utterances") + theme_bw() + facet_grid(faceID~emotion)
+
+negFace$faceEntropy = -1*negFace$faceProb*log2(negFace$faceProb)
+negFace$faceEntropy[ is.nan(negFace$faceEntropy) ] <- 0
+negFaceAgg = aggregate(faceEntropy ~ faceID + emotion, negFace, sum)
+posFace$faceEntropy = -1*posFace$faceProb*log2(posFace$faceProb)
+posFace$faceEntropy[ is.nan(posFace$faceEntropy) ] <- 0
+posFaceAgg = aggregate(faceEntropy ~ faceID + emotion, posFace, sum)
+
+#t.test(posFaceAgg$faceEntropy, negFaceAgg$faceEntropy)
+negFaceAgg1 = aggregate(faceEntropy ~ emotion, negFaceAgg, mean) #mean(negFaceAgg1$faceEntropy); sd(negFaceAgg1$faceEntropy)
+posFaceAgg1 = aggregate(faceEntropy ~ emotion, posFaceAgg, mean) #mean(posFaceAgg1$faceEntropy); sd(posFaceAgg1$faceEntropy)
+t.test(posFaceAgg1$faceEntropy, negFaceAgg1$faceEntropy, paired=T)
+
+
+
+# Probing individual datapoints
+
+negUttTemp = "dang"
+posWheelTemp = 24 #12, 9
+# posUttTemp = "awesome"
+# negWheelTemp = 1 #16, 49
+
+thisTemp<-subset(expt4.semi, expt4.semi$utteranceID == negUttTemp & expt4.semi$occludeUtterance==0 & expt4.semi$occludeWheel==1)
+mean(thisTemp$content); sqrt(var(thisTemp$content));
+thisTemp<-subset(expt4.semi, expt4.semi$spinnerID == posWheelTemp & expt4.semi$occludeUtterance==1 & expt4.semi$occludeWheel==0)
+mean(thisTemp$content); sqrt(var(thisTemp$content));
+thisTemp<-subset(expt4.semi, expt4.semi$utteranceID == negUttTemp & expt4.semi$spinnerID == posWheelTemp & expt4.semi$occludeUtterance==0 & expt4.semi$occludeWheel==0)
+mean(thisTemp$content); sqrt(var(thisTemp$content));
+```
+
+
+
+``` {r expt4-bootstrapped-plots, echo=FALSE, fig.width=7.8, fig.height=4}
+expt4BS <- read.csv('data/expt4_bootstrapped.csv', header=TRUE)
+apply(expt4BS, 2, function(x) quantile(x, .500))
+apply(expt4BS, 2, function(x) quantile(x, .025))
+apply(expt4BS, 2, function(x) quantile(x, .975))
+
+summaryCorrelationBS2 = data.frame(experiment = rep("Exp4", 9),
+                                  comparison = c( rep("All", 3),
+                                                  rep("NegUtt+PosWheel", 3),
+                                                  rep("PosUtt+NegWheel", 3) ), 
+                                  model = rep(c("Bayes", "Face-only", "Wheel-only"), 3),
+                                  correlation = c(as.numeric(apply(expt4BS, 2, function(x) quantile(x, .500)))[1:9]),
+                                  correlation.cih = c(as.numeric(apply(expt4BS, 2, function(x) quantile(x, .975)))[1:9]),
+                                  correlation.cil = c(as.numeric(apply(expt4BS, 2, function(x) quantile(x, .025)))[1:9]),
+                                  rmse = c(as.numeric(apply(expt4BS, 2, function(x) quantile(x, .500)))[10:18]),
+                                  rmse.cih = c(as.numeric(apply(expt4BS, 2, function(x) quantile(x, .975)))[10:18]),
+                                  rmse.cil = c(as.numeric(apply(expt4BS, 2, function(x) quantile(x, .025)))[10:18])
+)
+# p1: root mean square error
+
+p1 <- ggplot(summaryCorrelationBS2, aes(x=comparison, y=rmse, fill=model, group=model)) + 
+  geom_bar(stat="identity", position=position_dodge(), colour="black") +
+  geom_errorbar(aes(ymin=rmse.cih, ymax=rmse.cil), size=.3, width=.2, position=position_dodge(.9)) +
+  scale_fill_manual(values=c("#F0E442", "#0072B2", "#D55E00"), name="Model", labels=c("Bayes", "Utterance-only", "Outcome only")) +
+  theme_bw() + xlab("") + ylab("Root Mean Squared Error") + 
+  theme(strip.background = element_rect(fill="#FFFFFF"), 
+        strip.text = element_text(size=14),
+        axis.text = element_text(size=12),
+        axis.title.x = element_text(size=14, vjust=-0.2),
+        axis.title.y = element_text(size=14, vjust=0.35),
+        legend.text = element_text(size=12),
+        panel.grid = element_blank())
+
+# p2: correlation
+p2 <- ggplot(summaryCorrelationBS2, aes(x=comparison, y=correlation, fill=model, group=model)) + 
+  geom_bar(stat="identity", position=position_dodge(), colour="black") +
+  geom_errorbar(aes(ymin=correlation.cil, ymax=correlation.cih), size=.3, width=.2, position=position_dodge(.9)) +
+  scale_fill_manual(values=cbPal, name="Model", labels=c("Bayes", "Utterance-only", "Outcome only")) +
+  theme_bw() + xlab("") + ylab("Correlation") + 
+  theme(strip.background = element_rect(fill="#FFFFFF"), 
+        strip.text = element_text(size=14),
+        axis.text = element_text(size=12),
+        axis.title.x = element_text(size=14, vjust=-0.2),
+        axis.title.y = element_text(size=14, vjust=0.35),
+        legend.text = element_text(size=12),
+        panel.grid = element_blank())
+
+
+p1
+p2
+```
+
+``` {r expt4-bootstrapped-plots2, echo=FALSE, fig.width=5.5, fig.height=5}
+# p3: Bayesian model performance
+p3 <- ggplot(expt4expected, aes(x=expectedBayes, y=expectedEmpirical)) + geom_point(shape=1, size=1.5) +
+  geom_abline(intercept = 0, slope = 1, linetype="dashed", color="red") + # "y=x" line
+  scale_y_continuous(limits=c(1, 9)) + scale_x_continuous(limits=c(1, 9)) + 
+  theme_bw() + xlab("Bayesian Model Predictions") + ylab("Participants' emotion attribution") +
+  theme(strip.background = element_rect(fill="#FFFFFF"), 
+        strip.text = element_text(size=14),
+        axis.text = element_text(size=14),
+        axis.title.x = element_text(size=16, vjust=-0.2),
+        axis.title.y = element_text(size=16, vjust=0.35),
+        legend.text = element_text(size=12),
+        panel.grid = element_blank())
+
+p3
+```
+
+Figure 11
+
+``` {r expt4-plots2, echo=FALSE, fig.height=4, fig.width=4}
+expt4expectedNegFacePosWheel = subset(expt4expected, (expt4expected$faceID == "damn" | expt4expected$faceID == "man" | expt4expected$faceID == "dang" | expt4expected$faceID == "yikes") &
+                                       ((expt4expected$spinnerID%%3) == 0))
+expt4expectedPosFaceNegWheel = subset(expt4expected, (expt4expected$faceID == "awesome" | expt4expected$faceID == "yay" | expt4expected$faceID == "cool" | expt4expected$faceID == "wow") &
+                                       ((expt4expected$spinnerID%%3) == 1))
+
+ggplot(expt4expectedNegFacePosWheel, aes(x=expectedBayes, y=expectedEmpirical, color=faceID, shape=faceID, group=faceID)) + 
+  geom_point(size=2.5) +
+  #geom_abline(intercept = 0, slope = 1, linetype="dashed", color="red") + # "y=x" line
+  scale_y_continuous(limits=c(1, 9)) + scale_x_continuous(limits=c(1, 9)) + 
+  theme_bw() + xlab("Bayesian Model Predictions") + ylab("Participants' emotion attribution") +
+  scale_shape_discrete(name="Utterance") + scale_color_discrete(name="Utterance") + 
+  theme(legend.justification=c(1,1), legend.position=c(0.3,1), legend.direction="vertical", 
+        legend.margin=unit(0,"cm"), legend.key.size=unit(15,"points"),
+    #legend.position="none",
+    strip.background = element_rect(fill="#FFFFFF"), 
+    strip.text = element_text(size=12),
+    axis.text = element_text(size=12),
+    axis.title.x = element_text(size=14, vjust=-0.15),
+    axis.title.y = element_text(size=14, vjust=0.4),
+    legend.text = element_text(size=10))#,
+  #panel.grid = element_blank())
+
+ggplot(expt4expectedNegFacePosWheel, aes(x=expectedWheel, y=expectedEmpirical, color=faceID, shape=faceID, group=faceID)) + 
+  geom_point(size=2.5) +
+  #geom_abline(intercept = 0, slope = 1, linetype="dashed", color="red") + # "y=x" line
+  scale_y_continuous(limits=c(1, 9)) + scale_x_continuous(limits=c(1, 9)) + 
+  theme_bw() + xlab("Wheel-only Model Predictions") + ylab("Participants' emotion attribution") +
+  scale_shape_discrete(name="Utterance") + scale_color_discrete(name="Utterance") + 
+  theme(#legend.justification=c(1,1), legend.position=c(0.3,1), legend.direction="vertical", 
+        #legend.margin=unit(0,"cm"), legend.key.size=unit(15,"points"),
+        legend.position="none",
+        strip.background = element_rect(fill="#FFFFFF"), 
+        strip.text = element_text(size=12),
+        axis.text = element_text(size=12),
+        axis.title.x = element_text(size=14, vjust=-0.15),
+        axis.title.y = element_text(size=14, vjust=0.4),
+        legend.text = element_text(size=12))#,
+        #panel.grid = element_blank())
+
+ggplot(expt4expectedNegFacePosWheel, aes(x=expectedFace, y=expectedEmpirical, color=faceID, shape=faceID, group=faceID)) + 
+  geom_point(size=2.5) +
+  #geom_abline(intercept = 0, slope = 1, linetype="dashed", color="red") + # "y=x" line
+  scale_y_continuous(limits=c(1, 9)) + scale_x_continuous(limits=c(1, 9)) + 
+  theme_bw() + xlab("Utterance-only Model Predictions") + ylab("Participants' emotion attribution") +
+#  scale_shape_discrete(name="Utterance") + scale_color_discrete(name="Utterance") + 
+  theme(#legend.justification=c(1,1), legend.position=c(1,0.2), legend.direction="horizontal", 
+        #legend.margin=unit(0,"cm"), legend.key.size=unit(20,"points"),
+        legend.position="none",
+        strip.background = element_rect(fill="#FFFFFF"), 
+        strip.text = element_text(size=12),
+        axis.text = element_text(size=12),
+        axis.title.x = element_text(size=14, vjust=-0.15),
+        axis.title.y = element_text(size=14, vjust=0.4),
+        legend.text = element_text(size=12))#,
+        #panel.grid = element_blank())
+# 4x4
+```
+
+Figure 12
+
+
+```{r near-miss-combined-analysis, echo=FALSE}
+
+expt1_data$nearHigher = 1*((expt1_data$spinnerID %% 3==1) | (
+  (expt1_data$spinnerID %% 3==2 & expt1_data$angleProp > .5))) 
+
+expt1_data$nearerOutcome = ((expt1_data$spinnerID %% 3==1 & expt1_data$angleProp <= .5) |
+                                (expt1_data$spinnerID %% 3==2 & expt1_data$angleProp > .5)) * 
+  expt1_data$payoff3 + ((expt1_data$spinnerID %% 3==2 & expt1_data$angleProp <= .5) |
+                                (expt1_data$spinnerID %% 3==0 & expt1_data$angleProp > .5)) * 
+  expt1_data$payoff1 + ((expt1_data$spinnerID %% 3==0 & expt1_data$angleProp <= .5) |
+                                (expt1_data$spinnerID %% 3==1 & expt1_data$angleProp > .5)) * 
+  expt1_data$payoff2
+
+expt1_data$diffWin = expt1_data$win - expt1_data$nearerOutcome
+
+expt1_data$distance = 0.5-abs(expt1_data$angleProp-0.5)
+expt1_data$closeness_log = -log(expt1_data$distance) #plot(expt1_data$distance, expt1_data$closeness)
+expt1_data$closeness_reciprocal = 1/(expt1_data$distance)
+expt1_data$closeness_exp = exp(-25*(expt1_data$distance))
+
+#ggplot(expt1_data, aes(x=angleProp)) + 
+#    geom_histogram(aes(y=..density..),binwidth=.05,colour="black", fill="white") +
+#  geom_density(alpha=.2) + xlab("Normalized position within sector") + ylab("Density") + xlim(0, 1) +
+#  my_default_theme
+##5.5 by 3
+
+expt1_data$affectiveCloseness = expt1_data$closeness_reciprocal * expt1_data$diffWin
+nm_model_bare = (lmer(happy ~ win + PE + absPE + (1|workerid), expt1_data))
+nm_model_NM = lmer(happy ~ win + PE + absPE + affectiveCloseness + (1|workerid), expt1_data)
+
+summary(nm_model_NM)
+# not significant with just one expt...
+
+meta_expt1data = read.csv("/Users/Desmond/Git/affCog/data/expt1data.csv", header=TRUE)
+meta_expt1data$workerid <- match(meta_expt1data$workerid, unique(sort(meta_expt1data$workerid)))
+meta_expt3data = read.csv('/Users/Desmond/Git/affCog/data/expt3data.csv', header=TRUE)
+meta_expt3data$workerid <- 100 + match(meta_expt3data$workerid, unique(sort(meta_expt3data$workerid)))
+meta_expt3data = subset(meta_expt3data, meta_expt3data$occludeFace==1)
+meta_expt3data <- meta_expt3data[,c(1,7:16,23:30)]
+meta_expt4data = read.csv('/Users/Desmond/Git/affCog/data/expt4data.csv', header=TRUE)
+meta_expt4data$workerid <- 455+100+ match(meta_expt4data$workerid, unique(sort(meta_expt4data$workerid)))
+meta_expt4data = subset(meta_expt4data, meta_expt4data$occludeUtterance==1)
+meta_expt4data <- meta_expt4data[,c(1,7:16,21:28)]
+
+meta_expt1data$expt="expt1"
+meta_expt3data$expt="expt3"
+meta_expt4data$expt="expt4"
+meta_full = rbind(meta_expt1data, meta_expt3data, meta_expt4data)
+
+meta_full$EV = meta_full$prob1*meta_full$payoff1 + meta_full$prob2*meta_full$payoff2 + 
+  meta_full$prob3*meta_full$payoff3
+meta_full$PE = meta_full$win - meta_full$EV
+meta_full$absPE = abs(meta_full$PE)
+
+meta_full$nearHigher = 1*((meta_full$spinnerID %% 3==1) | (
+  (meta_full$spinnerID %% 3==2 & meta_full$angleProp > .5))) 
+
+meta_full$nearerOutcome = ((meta_full$spinnerID %% 3==1 & meta_full$angleProp <= .5) |
+                                (meta_full$spinnerID %% 3==2 & meta_full$angleProp > .5)) * 
+  meta_full$payoff3 + ((meta_full$spinnerID %% 3==2 & meta_full$angleProp <= .5) |
+                                (meta_full$spinnerID %% 3==0 & meta_full$angleProp > .5)) * 
+  meta_full$payoff1 + ((meta_full$spinnerID %% 3==0 & meta_full$angleProp <= .5) |
+                                (meta_full$spinnerID %% 3==1 & meta_full$angleProp > .5)) * 
+  meta_full$payoff2
+
+meta_full$diffWin = meta_full$win - meta_full$nearerOutcome
+
+meta_full$distance = 0.5-abs(meta_full$angleProp-0.5)
+meta_full$closeness_log = -log(meta_full$distance) #plot(meta_full$distance, meta_full$closeness)
+meta_full$closeness_reciprocal = 1/(meta_full$distance)
+meta_full$closeness_exp = exp(-25*(meta_full$distance))
+
+meta_full$affectiveCloseness = meta_full$closeness_reciprocal * meta_full$diffWin
+model_bare = (lmer(happy ~ win + PE + absPE + (1|spinnerID) + (1|workerid) + (1|expt), meta_full))
+
+meta_full$Regret = meta_full$win - meta_full$payoff3
+meta_full$Relief = meta_full$win - meta_full$payoff1
+meta_full$lwinProb = log(meta_full$winProb)
+
+model_Final = lmer(happy ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|spinnerID) + (1|workerid) + (1|expt), meta_full)
+summary(model_Final)
+
+model_Final = lmer(sad ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|spinnerID) + (1|workerid) + (1|expt), meta_full)
+summary(model_Final)
+
+
+model_Final = lmer(happy ~ win + PE + absPE + affectiveCloseness + (1|spinnerID) + (1|workerid) + (1|expt), meta_full)
+
+
+reg.Eqn1Full <- lmer(happy    ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid) + (1|spinnerID) + (1|expt), meta_full); summary(reg.Eqn1Full)
+reg.Eqn2Full <- lmer(sad      ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness +(1|workerid) + (1|spinnerID) + (1|expt), meta_full); summary(reg.Eqn2Full)
+reg.Eqn3Full <- lmer(anger    ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness +(1|workerid) + (1|spinnerID) + (1|expt), meta_full); summary(reg.Eqn3Full)
+reg.Eqn4Full <- lmer(surprise ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness +(1|workerid) + (1|spinnerID) + (1|expt), meta_full); summary(reg.Eqn4Full)
+reg.Eqn5Full <- lmer(disgust  ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness +(1|workerid) + (1|spinnerID) + (1|expt), meta_full); summary(reg.Eqn5Full)
+reg.Eqn6Full <- lmer(fear     ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness +(1|workerid) + (1|spinnerID) + (1|expt), meta_full); summary(reg.Eqn6Full)
+reg.Eqn7Full <- lmer(content  ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness +(1|workerid) + (1|spinnerID) + (1|expt), meta_full); summary(reg.Eqn7Full)
+reg.Eqn8Full <- lmer(disapp   ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness +(1|workerid) + (1|spinnerID) + (1|expt), meta_full); summary(reg.Eqn8Full)
+
+step1 <- step(reg.Eqn1Full); step1
+step2 <- step(reg.Eqn2Full); step2
+step3 <- step(reg.Eqn3Full); step3
+step4 <- step(reg.Eqn4Full); step4
+step5 <- step(reg.Eqn5Full); step5
+step6 <- step(reg.Eqn6Full); step6
+step7 <- step(reg.Eqn7Full); step7
+step8 <- step(reg.Eqn8Full); step8
+
+summary(reg.Eqn2Full)
+summary(reg.Eqn3Full)
+summary(reg.Eqn4Full)
+summary(reg.Eqn5Full)
+summary(reg.Eqn6Full)
+summary(reg.Eqn7Full)
+summary(reg.Eqn8Full)
+
+
+reg.Eqn7Full <- lmer(content  ~ win + absPE + Regret + Relief +(1|workerid) + (1|spinnerID) + (1|expt), meta_full); summary(reg.Eqn7Full)
+
+testA <- lmer(content  ~ win + PE + absPE +(1|workerid) + (1|spinnerID) + (1|expt), meta_full)
+testB<- lmer(content  ~ win + absPE + Regret + Relief +(1|workerid) + (1|spinnerID) + (1|expt), meta_full)
+anova(testA, testB)
+
+summary(lmer(happy ~ win + PE + absPE + affectiveCloseness + (1|spinnerID) + (1|workerid) + (1|expt), meta_full))
+
+anova(lmer(happy ~ win + PE + absPE + affectiveCloseness + (1|spinnerID) + (1|workerid) + (1|expt), meta_full), lmer(happy ~ win + PE + absPE + affectiveCloseness + abs(affectiveCloseness) + (1|spinnerID) + (1|workerid) + (1|expt), meta_full))
+
+# use confint to get confidence intervals!
+mc1 = confint(model_Final)
+#profile(model_Final)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+```{r split-half-correlations, echo=FALSE, eval=FALSE}
+
+indices = sample(nrow(expt1_data))%%2
+groupA = expt1_data[indices==1,]
+groupB = expt1_data[indices==0,]
+
+cor(groupA$happy, groupB$happy)
+
+
+### Split Half on Expt 1 data alone
+nIterations=5000
+splitHalfCorrelations <- vector(length=nIterations)
+for(l in 1:nIterations) {
+  AVec = c() #Initialize vectors
+  BVec = c()  
+  for(j in 1:50) {
+    #eval(parse( text=paste(paste('group = expt2_data[expt2_data$spinnerID==', toString(j), sep=""), ',]', sep="")))
+    
+    group = expt1_data[expt1_data$spinnerID==j,]
+    
+    group$randSplit = sample(nrow(group))%%2 #sample( nrow(gorup), nrow(group), replace=TRUE)
+    A = group[group$randSplit==0,]
+    B = group[group$randSplit==1,]
+    AVec <- c(AVec, mean(A$happy), mean(A$sad), mean(A$anger), mean(A$surprise), 
+              mean(A$disgust), mean(A$fear), mean(A$content), mean(A$disapp))
+    BVec <- c(BVec, mean(B$happy), mean(B$sad), mean(B$anger), mean(B$surprise), 
+              mean(B$disgust), mean(B$fear), mean(B$content), mean(B$disapp))
+    }
+  splitHalfCorrelations[l] <- cor(AVec,BVec)
+  }
+
+
+
+
+### Split Half on Expt 2 data alone
+nIterations=5000
+splitHalfCorrelations <- vector(length=nIterations)
+for(l in 1:nIterations) {
+  AVec = c() #Initialize vectors
+  BVec = c()  
+  for(j in 1:50) {
+    #eval(parse( text=paste(paste('group = expt2_data[expt2_data$spinnerID==', toString(j), sep=""), ',]', sep="")))
+    
+    group = expt2_data[expt2_data$spinnerID==j,]
+    
+    group$randSplit = sample(nrow(group))%%2 #sample( nrow(gorup), nrow(group), replace=TRUE)
+    A = group[group$randSplit==0,]
+    B = group[group$randSplit==1,]
+    
+    # taking the mean? to avoid odd numbered samples
+    AVec <- c(AVec, mean(A$outcomeEstimate1), mean(A$outcomeEstimate2), mean(A$outcomeEstimate3))
+    BVec <- c(BVec, mean(B$outcomeEstimate1), mean(B$outcomeEstimate2), mean(B$outcomeEstimate3))
+    }
+  splitHalfCorrelations[l] <- cor(AVec,BVec)
+  }
+
+# for forward data: 5000 splithalf iterations. sd = 0.00617
+#Min. 1st Qu.  Median    Mean 3rd Qu.    Max.         2.5%      97.5%       0.5%      99.5% 
+# 0.9114  0.9344  0.9387  0.9384  0.9428  0.9572   0.9253675    0.9495452  0.9209303   0.9522881 
+
+#for inverse data (model; by spinnerID) : 5000 splithalf iterations. sd = 0.0137
+#Min. 1st Qu.  Median    Mean 3rd Qu.    Max.          2.5%        97.5%    0.5%      99.5% 
+#0.8377  0.8855  0.8951  0.8944  0.9039  0.9353   0.8656696   0.920047  0.8559256  0.9263886 
+
+
+#splitHalfCorrelations = splitHalfCorrelations[!is.na(splitHalfCorrelations)]
+summary(splitHalfCorrelations)
+quantile(splitHalfCorrelations, 0.025)
+quantile(splitHalfCorrelations, 0.975)
+quantile(splitHalfCorrelations, 0.005)
+quantile(splitHalfCorrelations, 0.995)
+
+```
+
+
+
+
+```{r t-tests-for-non-overlapping-CIs, echo=FALSE}
+
+# As requested by reviewers, we included NHST results for all our statistical arguments. We had originally made our results claims via non-overlapping bootstrapped 95% confidence intervals.
+
+
+# t = (Xbar1 - Xbar2) / sqrt(SE1^2 + SE2^2). Back out SE from 95% CI.
+# make assumptions here: because 95% CI is bootstrapped, and thus not necessarily symmetric.
+calculateTStat <- function(Xbar1, Nearer_CI1, Xbar2, Nearer_CI2) {
+  SE1 = abs(Nearer_CI1 - Xbar1)/1.96
+  SE2 = abs(Nearer_CI2 - Xbar2)/1.96
+  tStat = (Xbar1 - Xbar2) / sqrt(  SE1^2 + SE2^2 )
+  return(tStat)
+}
+
+
+# 3.1.5 Results RMSE_Bayes outperforms RMSE_Face and RMSE_Outcome
+t1 = calculateTStat(Xbar1 = 1.218, Nearer_CI1 = 1.287, Xbar2 = 1.386, Nearer_CI2 = 1.314)
+t1
+2*(1-pt( abs(t1),49 )) #df = 50 trials - 1
+
+t1 = calculateTStat(Xbar1 = 1.218, Nearer_CI1 = 1.287, Xbar2 = 1.524, Nearer_CI2 = 1.462)
+t1
+2*(1-pt( abs(t1),49 ))
+
+# Corr_Bayes vs Corr_Face and Corr_Outcome
+t1 = calculateTStat(Xbar1 = 0.812, Nearer_CI1 = 0.790, Xbar2 = 0.733, Nearer_CI2 = 0.759)
+t1
+2*(1-pt( abs(t1),49 ))
+
+t1 = calculateTStat(Xbar1 = 0.812, Nearer_CI1 = 0.790, Xbar2 = 0.692, Nearer_CI2 = 0.717)
+t1
+2*(1-pt( abs(t1),49 ))
+
+
+# Neg face + Pos Wheel. Face-only - Outcome-only; Face-only - Bayes
+t1 = calculateTStat(Xbar1 = 0.343, Nearer_CI1 = 0.468, Xbar2 = 0.465, Nearer_CI2 = 0.332)
+t1
+2*(1-pt( abs(t1),49 ))
+
+t1 = calculateTStat(Xbar1 = 0.343, Nearer_CI1 = 0.468, Xbar2 = 0.571, Nearer_CI2 = 0.454)
+t1
+2*(1-pt( abs(t1),49 ))
+
+# Pos face + Neg Wheel. Outcome-only - Face-only; Outcome-only - Bayes
+t1 = calculateTStat(Xbar1 = 0.297, Nearer_CI1 = 0.422, Xbar2 = 0.678, Nearer_CI2 = 0.551)
+t1
+2*(1-pt( abs(t1),49 ))
+
+t1 = calculateTStat(Xbar1 = 0.297, Nearer_CI1 = 0.422, Xbar2 = 0.667, Nearer_CI2 = 0.568)
+t1
+2*(1-pt( abs(t1),49 ))
+
+
+##
+# 3.2.4 Results RMSE_Bayes outperforms RMSE_Utterance and RMSE_Outcome
+t1 = calculateTStat(Xbar1 = 1.494, Nearer_CI1 = 1.612, Xbar2 = 1.847, Nearer_CI2 = 1.731)
+t1
+2*(1-pt( abs(t1),49 )) #df = 50 trials - 1
+
+t1 = calculateTStat(Xbar1 = 1.494, Nearer_CI1 = 1.612, Xbar2 = 1.619, Nearer_CI2 = 1.512)
+t1
+2*(1-pt( abs(t1),49 ))
+
+# Corr_Bayes vs Corr_Utterance and Corr_Outcome
+t1 = calculateTStat(Xbar1 = 0.733, Nearer_CI1 = 0.687, Xbar2 = 0.570, Nearer_CI2 = 0.618)
+t1
+2*(1-pt( abs(t1),49 ))
+
+t1 = calculateTStat(Xbar1 = 0.733, Nearer_CI1 = 0.687, Xbar2 = 0.668, Nearer_CI2 = 0.710)
+t1
+2*(1-pt( abs(t1),49 ))
+
+
+# Neg utt + Pos Wheel. Bayes - Outcome-only
+t1 = calculateTStat(Xbar1 = 0.784, Nearer_CI1 = 0.702, Xbar2 = 0.775, Nearer_CI2 = 0.844)
+t1
+2*(1-pt( abs(t1),49 ))
+
+# Pos utt + Neg Wheel. Bayes - Outcome-only
+t1 = calculateTStat(Xbar1 = 0.517, Nearer_CI1 = 0.367, Xbar2 = 0.486, Nearer_CI2 = 0.628)
+t1
+2*(1-pt( abs(t1),49 ))
+
+
+
+#
+#ggplot(expt1_data, aes(x=happy)) + geom_histogram(binwidth=1) + facet_wrap(~spinnerID, ncol=6)
+#
+#ggplot(expt1_data, aes(x=sad)) + geom_histogram(binwidth=1) + facet_wrap(~spinnerID, ncol=6)
+#
+#
+#EstPosterior = c(model$EstimatedPosterior1, model$EstimatedPosterior2, model$EstimatedPosterior3)
+#ObsPosterior = c(model$ObservedPosterior1, model$ObservedPosterior2, model$ObservedPosterior3)
+#takePosterior = EstPosterior>0.2 & EstPosterior<0.6
+#
+#cor.test(EstPosterior[takePosterior],ObsPosterior[takePosterior])
+#
+#plot(EstPosterior[takePosterior],ObsPosterior[takePosterior])
+#
+
+```
+
+
+
+
+
