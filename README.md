@@ -3,7 +3,7 @@
 
 This repository contains materials for the following paper:
 
-Ong, D. C., Zaki, J., & Goodman, N. D. (in prep). Affective Cognition: Exploring lay theories of emotion.
+Ong, D. C., Zaki, J., & Goodman, N. D. (accepted). Affective Cognition: Exploring lay theories of emotion. *Cognition*
 
 This repository is maintained by Desmond Ong. Questions, comments, requests for clarification or replication, etc, should be directed to desmond (dot) ong (at) stanford (dot) edu
 
