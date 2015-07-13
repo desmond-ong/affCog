@@ -1,9 +1,9 @@
 # Affective Cognition
 -----
 
-This repository contains materials for the following paper:
+This repository contains materials for the following <a href="http://www.sciencedirect.com/science/article/pii/S0010027715300196">paper</a> (short summary <a href="http://web.stanford.edu/~dco/research_affCog.html">here</a>):
 
-Ong, D. C., Zaki, J., & Goodman, N. D. (accepted). Affective Cognition: Exploring lay theories of emotion. *Cognition*
+Ong, D. C., Zaki, J., & Goodman, N. D. (2015). Affective Cognition: Exploring lay theories of emotion. *Cognition*, 143, 141-162. 
 
 This repository is maintained by Desmond Ong. Questions, comments, requests for clarification or replication, etc, should be directed to desmond (dot) ong (at) stanford (dot) edu
 
