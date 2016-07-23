@@ -1,7 +1,7 @@
 ---
 title: "Analysis Script accompaning Affective Cognition paper"
 author: "Desmond Ong"
-date: "Updated: June 10, 2015"
+date: "Updated: Mar 27, 2016"
 output: html_document
 ---
 
@@ -11,6 +11,10 @@ library(ggplot2)
 library(ggbiplot)
 library(grid)
 library(lmerTest)
+# if the web.stanford.edu R code doesn't work, you can use the following urls on github.
+#library(devtools)
+#source_url("https://raw.github.com/desmond-ong/common/master/R/useful.R")
+#source_url("https://raw.github.com/desmond-ong/common/master/R/summarySE.R")
 source("http://web.stanford.edu/~dco/common/summarySE.R")
 source("http://web.stanford.edu/~dco/common/useful.R")
 source("data/Myggbiplot.R")
@@ -22,9 +26,24 @@ cbPal <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D
 
 ```
 
-# Experiment 1
 
-### Model Selection
+This markdown document contains code and analyses to accompany the following paper.
+
+Ong, D. C., Zaki, J., & Goodman, N. D. (2015). Affective Cognition: Exploring lay theories of emotion. Cognition, 143, 141-162.
+
+I have appended only the results sections of the paper, side-by-side with the corresponding analyses. The paper itself is much easier to read in the journal-formatted form, here: http://www.sciencedirect.com/science/article/pii/S0010027715300196
+
+
+
+## Experiment 1 Results
+
+Model selection (in Appendix A) revealed that participants’ emotion ratings were significantly predicted only by three of the seven regressors we initially proposed: amount won, the prediction error (PE), and the absolute value of the prediction error (|PE|) (see also Section 3.3 for a re-analysis with more data). Crucially, PE and |PE| account for significant variance in emotion ratings after accounting for amount won. This suggests that affective cognition is remarkably consistent with economic and psychological models of subjective utility. In particular, emotion inferences exhibited reference-dependence—tracking prediction error in addition to amount won—and loss aversion—in that emotion inferences were more strongly predicted by negative, as opposed to positive prediction error. These features suggest that lay observers spontaneously use key features of prospect theory ( Kahneman and Tversky, 1979 and Kahneman and Tversky, 1984) in reasoning about others’ emotions: a remarkable connection between formal and everyday theorizing. It is worth noting as well that the significant regressors for surprise followed a slightly different pattern from the rest of the other emotions, where the win probability, as well as regret and relief, seem just as important as the amount won, PE, and |PE|.
+
+The aforementioned analysis suggests that amount won, PE, and |PE| are necessary to model emotion inferences in a gambling context and suggest a low dimensional structure for the situation features. Next, we explored the underlying dimensionality of participants’ inferences about agents’ emotions via an a priori planned Principal Component Analysis (PCA). Previous work on judgments of facial and verbal emotions (e.g., Russell, 1980 and Schlosberg, 1954) and self-reported emotions (e.g., Kuppens et al., 2012 and Watson and Tellegen, 1985) have suggested a low-dimensional structure, and we planned this analysis to see if a similar low-dimensional structure might emerge in attributed emotions in our paradigm.
+
+
+
+
 
 ```{r expt-1-model-selection, echo=FALSE}
 expt1_data = read.csv("data/expt1data.csv")
@@ -105,39 +124,41 @@ expt1_data$affectiveCloseness = expt1_data$closeness_reciprocal * expt1_data$dif
 ### --- Model selection --- ###
 # Analysis reported in Appendix A
 
-reg.Eqn1Full <- lmer(happy    ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); summary(reg.Eqn1Full)
-reg.Eqn2Full <- lmer(sad      ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); summary(reg.Eqn2Full)
-reg.Eqn3Full <- lmer(anger    ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); summary(reg.Eqn3Full)
-reg.Eqn4Full <- lmer(surprise ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); summary(reg.Eqn4Full)
-reg.Eqn5Full <- lmer(disgust  ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); summary(reg.Eqn5Full)
-reg.Eqn6Full <- lmer(fear     ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); summary(reg.Eqn6Full)
-reg.Eqn7Full <- lmer(content  ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); summary(reg.Eqn7Full)
-reg.Eqn8Full <- lmer(disapp   ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); summary(reg.Eqn8Full)
+reg.Eqn1Full <- lmer(happy    ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); #summary(reg.Eqn1Full)
+reg.Eqn2Full <- lmer(sad      ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); #summary(reg.Eqn2Full)
+reg.Eqn3Full <- lmer(anger    ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); #summary(reg.Eqn3Full)
+reg.Eqn4Full <- lmer(surprise ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); #summary(reg.Eqn4Full)
+reg.Eqn5Full <- lmer(disgust  ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); #summary(reg.Eqn5Full)
+reg.Eqn6Full <- lmer(fear     ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); #summary(reg.Eqn6Full)
+reg.Eqn7Full <- lmer(content  ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); #summary(reg.Eqn7Full)
+reg.Eqn8Full <- lmer(disapp   ~ win + PE + absPE + Regret + Relief + lwinProb + affectiveCloseness + (1|workerid), expt1_data); #summary(reg.Eqn8Full)
 
 # stepwise using the step function
 
-step1 <- step(reg.Eqn1Full); step1
-step2 <- step(reg.Eqn2Full); step2
-step3 <- step(reg.Eqn3Full); step3
-step4 <- step(reg.Eqn4Full); step4
-step5 <- step(reg.Eqn5Full); step5
-step6 <- step(reg.Eqn6Full); step6
-step7 <- step(reg.Eqn7Full); step7
-step8 <- step(reg.Eqn8Full); step8
+step1 <- step(reg.Eqn1Full); #step1
+step2 <- step(reg.Eqn2Full); #step2
+step3 <- step(reg.Eqn3Full); #step3
+step4 <- step(reg.Eqn4Full); #step4
+step5 <- step(reg.Eqn5Full); #step5
+step6 <- step(reg.Eqn6Full); #step6
+step7 <- step(reg.Eqn7Full); #step7
+step8 <- step(reg.Eqn8Full); #step8
 
 # Printing the regression coefficients
-reg.Eqn1 <- lmer(happy    ~ win + PE + absPE + (1|workerid), expt1_data); summary(reg.Eqn1)
-reg.Eqn2 <- lmer(sad      ~ win + PE + absPE + (1|workerid), expt1_data); summary(reg.Eqn2)
-reg.Eqn3 <- lmer(anger    ~ win + PE + absPE + (1|workerid), expt1_data); summary(reg.Eqn3)
-reg.Eqn4 <- lmer(surprise ~ win + PE + absPE + (1|workerid), expt1_data); summary(reg.Eqn4)
-reg.Eqn5 <- lmer(disgust  ~ win + PE + absPE + (1|workerid), expt1_data); summary(reg.Eqn5)
-reg.Eqn6 <- lmer(fear     ~ win + PE + absPE + (1|workerid), expt1_data); summary(reg.Eqn6)
-reg.Eqn7 <- lmer(content  ~ win + PE + absPE + (1|workerid), expt1_data); summary(reg.Eqn7)
-reg.Eqn8 <- lmer(disapp   ~ win + PE + absPE + (1|workerid), expt1_data); summary(reg.Eqn8)
+reg.Eqn1 <- lmer(happy    ~ win + PE + absPE + (1|workerid), expt1_data); #summary(reg.Eqn1)
+reg.Eqn2 <- lmer(sad      ~ win + PE + absPE + (1|workerid), expt1_data); #summary(reg.Eqn2)
+reg.Eqn3 <- lmer(anger    ~ win + PE + absPE + (1|workerid), expt1_data); #summary(reg.Eqn3)
+reg.Eqn4 <- lmer(surprise ~ win + PE + absPE + (1|workerid), expt1_data); #summary(reg.Eqn4)
+reg.Eqn5 <- lmer(disgust  ~ win + PE + absPE + (1|workerid), expt1_data); #summary(reg.Eqn5)
+reg.Eqn6 <- lmer(fear     ~ win + PE + absPE + (1|workerid), expt1_data); #summary(reg.Eqn6)
+reg.Eqn7 <- lmer(content  ~ win + PE + absPE + (1|workerid), expt1_data); #summary(reg.Eqn7)
+reg.Eqn8 <- lmer(disapp   ~ win + PE + absPE + (1|workerid), expt1_data); #summary(reg.Eqn8)
 
 ```
 
-### PCA Calculation
+
+
+
 
 ``` {r expt1-PCA, echo=FALSE, eval=TRUE}
 #### ---- PCA Calculation ---- ####
@@ -145,8 +166,8 @@ reg.Eqn8 <- lmer(disapp   ~ win + PE + absPE + (1|workerid), expt1_data); summar
 PCACalculation <- princomp(~ happy + sad + anger + surprise + disgust + 
                   fear + content + disapp, 
                 expt1_data[,12:19])
-print(summary(PCACalculation))
-print(PCACalculation[2])
+#print(summary(PCACalculation))
+#print(PCACalculation[2])
 
 expt1_data$pcomp1 = PCACalculation$loadings[1,1]*(expt1_data$happy-mean(expt1_data$happy)) + 
   PCACalculation$loadings[2,1]*(expt1_data$sad-mean(expt1_data$sad)) + 
@@ -165,12 +186,17 @@ expt1_data$pcomp2 = PCACalculation$loadings[1,2]*(expt1_data$happy-mean(expt1_da
   PCACalculation$loadings[7,2]*(expt1_data$content-mean(expt1_data$content)) + 
   PCACalculation$loadings[8,2]*(expt1_data$disapp-mean(expt1_data$disapp))
 
-cor.test(expt1_data$pcomp1, expt1_data$PE)
-cor.test(expt1_data$pcomp2, expt1_data$absPE)
+#cor.test(expt1_data$pcomp1, expt1_data$PE)
+#cor.test(expt1_data$pcomp2, expt1_data$absPE)
 
 ```
 
-### PCA Plots
+
+The first principal component (PC) accounted for 59% of the variance in participants’ ratings along all 8 emotions, while the second PC accounted for 16%; subsequent PCs individually explained less than 10% of the variance. The first PC accounted for most of the variance in the emotion ratings, although the second PC accounted for a far lower, but still noteworthy, amount of variance. Full details of the PCA procedure and loading results are given in Appendix A.
+
+Post-hoc exploratory analysis of the first two PCs revealed that the first PC positively tracked happiness and contentment, while negatively tracking all negative emotions; by contrast, the second PC positively tracked the intensity of both positive and negative emotions (Fig. 4A). Interestingly, this connects with classic concepts of valence and arousal, respectively, which feature centrally in emotion science6 (e.g., Kuppens et al., 2012, Russell, 1980 and Schlosberg, 1954). In particular, some theorists view emotional valence as a crucial form of feedback to the agent: positively valenced emotions like happiness signal a positive prediction error—that the agent is doing better than expected—hence, positively reinforcing successful behavior. Conversely, negatively valenced emotions could signal to the agent to change some behavior to achieve a better outcome (e.g., Carver and Scheier, 2004 and Ortony et al., 1988). In line with this, we find that the first PC (“valence”) of emotions attributed by the observer correlated strongly with the PE of the situation (r = 0.737, 95% C.I. = [0.707; 0.764]). Additionally, we find that the second PC (“arousal”) correlated with |PE| (r = 0.280 [0.222, 0.364]; Fig. 4B).
+
+
 
 ``` {r expt1-PCA-plots, echo=FALSE, fig.height=4.5, fig.width=4.5, eval=TRUE}
 # modified ggbiplot --> Myggbiplot. (Just added a - sign to the var angle because I'm using scale_y_reverse())
@@ -187,10 +213,15 @@ ggplot(expt1_data, aes(x=scale(pcomp1), y=scale(pcomp2), color=PE)) +
         legend.margin=unit(0,"cm"), legend.key.size=unit(20,"points"), legend.text=element_text(size = 10)) 
 #4.5 x 4.5
 ```
-Figure 4
+Figure 4: (A) Participants’ emotion ratings projected onto the dimensions of the first two principal components (PCs), along with the loadings of the PCs on each of the eight emotions. The loading of the PCs onto the eight emotions suggests a natural interpretation of the first two PCs as “valence” and “arousal” respectively. The labels for disgust and anger are overlapping. (B) Participant’s emotion ratings projected onto the dimensions of the first two PCs, this time colored by the prediction error (PE = amount won − expected value of wheel). (For interpretation of the references to colour in this figure legend, the reader is referred to the web version of this article.)
 
 
-## Expt 2
+We started with a priori predictions for a low-dimensional summary of outcome features, and followed up with a post hoc dimensionality reduction analysis of the emotion ratings. It is intriguing that the low-dimensional value computations (e.g. PE, |PE|) are intimately tied with the principal components of the emotion ratings (“valence” and “arousal”). However, note that the second PC (“arousal”) accounts for much less variance than the first PC (“valence”). One possibility is that the paradigm we used is limited in the range of emotions that it elicits in an agent, which restricts the complexity of emotion inferences in this paradigm. A second possibility is that emotional valence is the central feature of affective cognition, and valence would carry most of the variance in emotion inferences across more complex scenarios. Although we are not able to address the second possibility in this paper, there is much theoretical evidence from affective science (e.g., Barrett and Russell, 1999, Russell, 1980 and Schlosberg, 1954) in favor of the second possibility; future work is needed to explore this further.
+
+Together, these findings provide two key insights into the structure of affective cognition: (i) lay theories of emotion are low dimensional, consistent with affective science concepts of valence and arousal, and (ii) these core dimensions of emotion inference also track aspects of the situation and outcome that reflect value computation parameters described by economic models such as prospect theory. Although the specific structure of affective cognition likely varies depending on the complexity and details of a given context, we believe that observers’ use of low-dimensional “active psychological ingredients” in drawing inferences constitutes a core feature of affective cognition.
+
+
+
 
 ``` {r expt2-calculation, echo=FALSE, eval=TRUE}
 
@@ -390,6 +421,18 @@ for(k in 1:numberOfIterations) { # bootstrap loop
   bestCor[k] = modelRMSE[which.min(modelRMSE$RMSE),3] 
 } # end bootstrap loop
 ```
+
+
+## Experiment 2 Results
+
+Model-based posterior probabilities tightly tracked the observer judgments in Experiment 2 (Fig. 6B). The optimal noise parameter was 3.2 [2.9, 3.6], which resulted in a model RMSE of 0.116 [0.112, 0.120]. The model’s predictions explained much of the variance in participants’ judgments, achieving a high correlation of 0.806 [0.792, 0.819]. For comparison, the bootstrapped split-half correlation of the posterior probability estimates in Experiment 2 is 0.895 [0.866, 0.920]. The split-half correlation for the emotion attributions in Experiment 1, the data that this model is fit to, is 0.938 [0.925, 0.950]. Together these two split-half reliabilities give an upper-bound for model performance, and our model performs very comparably to these upper limits.
+
+
+
+![Figure 6. (A) Simple causal model. The solid arrow represents a causal relationship (outcomes “cause” emotion; P(e|o) from Experiment 1), while the dashed arrow represents an inference that can be made (P(o|e) from Experiment 2). (B) Comparison of participants’ estimates of the posterior probability from Experiment 2 with the predictions of the model built in Experiment 1. There is a strong correlation of 0.806 (0.792, 0.819). The dashed red line has intercept 0 and slope 1 and is added for reference. (For interpretation of the references to colour in this figure legend, the reader is referred to the web version of this article.](writeup/Fig6_exp2Results.pdf)
+
+
+This results suggest that a Bayesian framework can accurately describe how observers make reverse inferences, P(o|e), given how they make forward inferences, P(e|o). At a broader level, the results imply that the causal knowledge in an observer’s lay theory of emotion is abstract enough to use for multiple patterns of reasoning. In the next section, we extend this work further by considering inferences about emotion from multiple sources of information.
 
 
 
