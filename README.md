@@ -21,7 +21,9 @@ Analysis code is provided in affCog_analysis.Rmd (a R Markdown document).
 
 The file contains all the R code necessary to replicate the analyses reported in the paper.
 
-Though it is in R Markdown, I have not yet formatted the markdown to make a readable HTML document. This will happen soon.
+Here's the knitted version of the .Rmd document: http://rawgit.com/desmond-ong/affCog/master/affCog_analysis.html
+Note that all the analyses are there in the file, but right now the formatting (text; making it look pretty and readable) is only half done. This should happen soon...
+
 
 
 
