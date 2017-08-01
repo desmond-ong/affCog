@@ -1,7 +1,5 @@
----
-title: Affective Cognition paper
----
 
+# Affective Cognition paper
 
 This [Github repository](https://github.com/desmond-ong/affCog/) contains materials for the following [paper](http://www.sciencedirect.com/science/article/pii/S0010027715300196) ([short summary here](http://web.stanford.edu/~dco/research_affCog.html)):
 
