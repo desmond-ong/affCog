@@ -1,6 +1,5 @@
 ---
 title: Affective Cognition paper
-layout: post
 ---
 
 
