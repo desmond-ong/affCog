@@ -260,11 +260,21 @@ model$ObservedPosterior1 <- (summarySE(expt2_data, measurevar="outcomeEstimate1"
 model$ObservedPosterior2 <- (summarySE(expt2_data, measurevar="outcomeEstimate2", groupvars=c("spinnerID"))$outcomeEstimate2 - 1)/8
 model$ObservedPosterior3 <- (summarySE(expt2_data, measurevar="outcomeEstimate3", groupvars=c("spinnerID"))$outcomeEstimate3 - 1)/8
 
-# Normalizing the observed posteriors
+# # also storing the CI of participants
+# model$ObservedPosterior1ci <- (summarySE(expt2_data, measurevar="outcomeEstimate1", groupvars=c("spinnerID"))$ci)/8 
+# model$ObservedPosterior2ci <- (summarySE(expt2_data, measurevar="outcomeEstimate2", groupvars=c("spinnerID"))$ci)/8
+# model$ObservedPosterior3ci <- (summarySE(expt2_data, measurevar="outcomeEstimate3", groupvars=c("spinnerID"))$ci)/8
+
+# Normalizing the observed posteriors and cis
 model$ObservedPosteriorSum = model$ObservedPosterior1 + model$ObservedPosterior2 + model$ObservedPosterior3
 model$ObservedPosterior1 <- model$ObservedPosterior1/model$ObservedPosteriorSum
 model$ObservedPosterior2 <- model$ObservedPosterior2/model$ObservedPosteriorSum
 model$ObservedPosterior3 <- model$ObservedPosterior3/model$ObservedPosteriorSum
+
+# model$ObservedPosterior1ci <- model$ObservedPosterior1ci/model$ObservedPosteriorSum
+# model$ObservedPosterior2ci <- model$ObservedPosterior2ci/model$ObservedPosteriorSum
+# model$ObservedPosterior3ci <- model$ObservedPosterior3ci/model$ObservedPosteriorSum
+
 
 # Create PE and |PE| variables in the Model dataframe to assist in the calculations.
 model$PE_1 = model$payoff1 - model$EV
@@ -279,13 +289,15 @@ model$absPE_3 = abs(model$PE_3)
 
 #### ---- Set Bootstrap parameters ---- ####
 
-# Here, we just set the number of iterations to 1
+# Here, we just set the number of iterations to 1, and use the non-bootstrapped dataframe. 
 numberOfIterations = 1
 bestVarianceSmoothing = rep(-1,numberOfIterations) # to store the variance smoothing parameter
 bestRMSE = rep(-1,numberOfIterations) # to store the RMSE
 bestCor = rep(-1,numberOfIterations) # to store the correlations
 
 expt1_data = expt1_data[order(expt1_data$workerid),]
+
+#modelResults = matrix(rep(NA,150), nrow=150)
 
 expt1_dataBoot<-expt1_data
 #### Bootstrap Loop ####
@@ -297,6 +309,7 @@ for(k in 1:numberOfIterations) { # bootstrap loop
     expt1_dataBoot$workerid[((m-1)*10 + 1): (m*10)] <- m
   }
   
+  #modelResults1 = matrix(rep(NA,150), nrow=150)
   
   #### ---- make expt1_dataBoot ---- ####
   ### calculate the regression parameters ###  
@@ -408,18 +421,79 @@ for(k in 1:numberOfIterations) { # bootstrap loop
     EstPosterior = c(model$EstimatedPosterior1, model$EstimatedPosterior2, model$EstimatedPosterior3)
     ObsPosterior = c(model$ObservedPosterior1, model$ObservedPosterior2, model$ObservedPosterior3)
     
+    #modelResults1 = cbind(modelResults1, EstPosterior)
+    
     # Storing the parameters for this run of optimizing j
     modelRMSE[j,1] = varianceSmoothing
     # minimizing root-mean-squared-error of y-x (i.e. for a straight line)
     modelRMSE[j,2] = sqrt(mean((ObsPosterior-EstPosterior)^2))
     modelRMSE[j,3] = cor(EstPosterior,ObsPosterior)
   }
-  
+  #modelResults1 = modelResults1[,-1]
+  #modelResults = cbind(modelResults, modelResults1[,which.min(modelRMSE$RMSE)])
   # Store the best parameters for this bootstrap iteration k
   bestVarianceSmoothing[k] = modelRMSE[which.min(modelRMSE$RMSE),1]
   bestRMSE[k] = modelRMSE[which.min(modelRMSE$RMSE),2]
   bestCor[k] = modelRMSE[which.min(modelRMSE$RMSE),3] 
 } # end bootstrap loop
+# 
+# #plot
+# modelResults = modelResults[,-1]
+plotDF = data.frame(modelMean = apply(modelResults,1,mean),
+                    modelSD = apply(modelResults,1,sd),
+                    observerMean = ObsPosterior,
+                    observerCI = c(model$ObservedPosterior1ci, model$ObservedPosterior2ci, model$ObservedPosterior3ci))
+
+#modelResults$mean = rowMeans(modelResults)
+#modelResults$SD = rowSD
+
+ggplot(plotDF, aes(x=modelMean, y=observerMean)) +
+  geom_point() +
+  geom_smooth(method="lm") +
+  #geom_abline(intercept = 0, slope = 1) +
+  geom_errorbar(aes(ymin=observerMean-observerCI, ymax=observerMean+observerCI)) +
+  geom_errorbarh(aes(xmin=modelMean-modelSD, xmax=modelMean+modelSD)) +
+  xlab("Model Predictions") + ylab("Participants' posterior estimates") +
+  coord_cartesian(xlim=c(0, 0.85), ylim=c(0, 0.85)) +
+  theme(legend.position="top",
+        strip.background = element_rect(fill="#FFFFFF"),
+        strip.text = element_text(size=12),
+        axis.text = element_text(size=12),
+        axis.title.x = element_text(size=14, vjust=-0.2),
+        axis.title.y = element_text(size=14, vjust=0.8),
+        legend.text = element_text(size=12),
+        title = element_text(size=18, vjust=1),
+        panel.grid = element_blank())
+
+ggplot(plotDF, aes(x=modelMean, y=observerMean)) +
+  geom_point(color = "white") +
+  #geom_smooth(method="lm") +
+  geom_abline(intercept = 0, slope = 1, size=1.0, linetype="dashed", color="red") +
+  geom_errorbar(aes(ymin=observerMean-observerCI, ymax=observerMean+observerCI), color = "white") +
+  geom_errorbarh(aes(xmin=modelMean-modelSD, xmax=modelMean+modelSD), color = "white") +
+  xlab("Model Predictions") + ylab("Participants' posterior estimates") +
+  coord_cartesian(xlim=c(0, 0.8), ylim=c(0, 0.8)) +
+  theme(legend.position="top",
+        strip.background = element_rect(fill="#FFFFFF"),
+        strip.text = element_text(size=12),
+        axis.line = element_blank(),
+        axis.text = element_text(size=12, color = "white"),
+        axis.title.x = element_text(size=14, vjust=-0.2, color = "white"),
+        axis.title.y = element_text(size=14, vjust=0.8, color = "white"),
+        axis.ticks = element_line(color = "white", size  =  0.2),
+        legend.text = element_text(size=12),
+        title = element_text(size=18, vjust=1),
+        panel.background = element_rect(fill = "black", color  =  NA),
+        panel.border = element_rect(fill = NA, color = "white"),
+      #panel.grid.major = element_line(color = "grey35"),
+      #panel.grid.minor = element_line(color = "grey20"),
+      panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+      panel.margin = unit(0.5, "lines"),
+      plot.background = element_rect(color = "black", fill = "black"),
+      plot.title = element_text(size = 12*1.2, color = "white"),
+      plot.margin = unit(rep(1, 4), "lines"))
+
+
 ```
 
 
@@ -581,6 +655,7 @@ expt3expected$expectedBayes = aggregate(expectedBayesProbTimesValue ~ faceID + s
 expt3expected$expectedFace = aggregate(expectedFaceProbTimesValue ~ faceID + spinnerID + emotion, expt3, sum)$expectedFaceProbTimesValue
 expt3expected$expectedWheel = aggregate(expectedWheelProbTimesValue ~ faceID + spinnerID + emotion, expt3, sum)$expectedWheelProbTimesValue
 
+
 #### ---- Analysis for Expt3 (face + wheel) ---- ####
 
 cor(expt3expected$expectedEmpirical,expt3expected$expectedBayes) # R = .862
@@ -730,6 +805,35 @@ p3 <- ggplot(expt3expected, aes(x=expectedBayes, y=expectedEmpirical)) + geom_po
         panel.grid = element_blank())
 
 p3
+
+# # black:
+# ggplot(expt3expected, aes(x=expectedBayes, y=expectedEmpirical)) + geom_point(size=0.5, color = "white") +
+#   geom_abline(intercept = 0, slope = 1, size=1.0, linetype="dashed", color="red") + # "y=x" line
+#   #geom_smooth(method="lm") +
+#   scale_y_continuous(limits=c(1, 9)) + scale_x_continuous(limits=c(1, 9)) + 
+#   xlab("Bayesian Model Predictions") + ylab("Participants' emotion attribution") +
+#   theme(legend.position="top",
+#         strip.background = element_rect(fill="#FFFFFF"),
+#         strip.text = element_text(size=12),
+#         axis.line = element_blank(),
+#         axis.text = element_text(size=12, color = "white"),
+#         axis.title.x = element_text(size=14, vjust=-0.2, color = "white"),
+#         axis.title.y = element_text(size=14, vjust=0.8, color = "white"),
+#         axis.ticks = element_line(color = "white", size  =  0.2),
+#         legend.text = element_text(size=12),
+#         title = element_text(size=18, vjust=1),
+#         panel.background = element_rect(fill = "black", color  =  NA),
+#         panel.border = element_rect(fill = NA, color = "white"),
+#         #panel.grid.major = element_line(color = "grey35"),
+#         #panel.grid.minor = element_line(color = "grey20"),
+#         panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+#         panel.margin = unit(0.5, "lines"),
+#         plot.background = element_rect(color = "black", fill = "black"),
+#         plot.title = element_text(size = 12*1.2, color = "white"),
+#         plot.margin = unit(rep(1, 4), "lines"))
+
+
+
 ```
 
 
@@ -894,6 +998,31 @@ p3 <- ggplot(expt4expected, aes(x=expectedBayes, y=expectedEmpirical)) + geom_po
         panel.grid = element_blank())
 
 p3
+
+# ggplot(expt4expected, aes(x=expectedBayes, y=expectedEmpirical)) + geom_point(size=0.5, color = "white") +
+#   geom_abline(intercept = 0, slope = 1, size=1.0, linetype="dashed", color="red") + # "y=x" line
+#   #geom_smooth(method="lm") +
+#   scale_y_continuous(limits=c(1, 9)) + scale_x_continuous(limits=c(1, 9)) +
+#   xlab("Bayesian Model Predictions") + ylab("Participants' emotion attribution") +
+#   theme(legend.position="top",
+#         strip.background = element_rect(fill="#FFFFFF"),
+#         strip.text = element_text(size=12),
+#         axis.line = element_blank(),
+#         axis.text = element_text(size=12, color = "white"),
+#         axis.title.x = element_text(size=14, vjust=-0.2, color = "white"),
+#         axis.title.y = element_text(size=14, vjust=0.8, color = "white"),
+#         axis.ticks = element_line(color = "white", size  =  0.2),
+#         legend.text = element_text(size=12),
+#         title = element_text(size=18, vjust=1),
+#         panel.background = element_rect(fill = "black", color  =  NA),
+#         panel.border = element_rect(fill = NA, color = "white"),
+#         #panel.grid.major = element_line(color = "grey35"),
+#         #panel.grid.minor = element_line(color = "grey20"),
+#         panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+#         panel.margin = unit(0.5, "lines"),
+#         plot.background = element_rect(color = "black", fill = "black"),
+#         plot.title = element_text(size = 12*1.2, color = "white"),
+#         plot.margin = unit(rep(1, 4), "lines"))
 ```
 
 Figure 11
