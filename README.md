@@ -1,7 +1,7 @@
 
 # Affective Cognition paper
 
-This [Github repository](https://github.com/desmond-ong/affCog/) contains materials for the following [paper](http://www.sciencedirect.com/science/article/pii/S0010027715300196) ([short summary here](http://web.stanford.edu/~dco/research_affCog.html)):
+This [Github page](http://desmond-ong.github.io/affCog/) ([repository](https://github.com/desmond-ong/affCog/)) contains materials for the following [paper](http://www.sciencedirect.com/science/article/pii/S0010027715300196) ([short summary here](http://web.stanford.edu/~dco/research_affCog.html)):
 
 Ong, D. C., Zaki, J., & Goodman, N. D. (2015). Affective Cognition: Exploring lay theories of emotion. *Cognition*, 143, 141-162. 
 
